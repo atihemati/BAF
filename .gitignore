@@ -1,21 +1,20 @@
-Antares/input/
-Antares/output/
-Antares/logs/
-Balmorel/base/auxils
-Pre-Processing/Data
-Pre-Processing/Representative periods/*.png
-simple-multienergy-example/
+src/Antares/input/
+src/Antares/output/
+src/Antares/logs/
+src/Balmorel/base/auxils
+src/Pre-Processing/Data
+src/Pre-Processing/Representative periods/*.png
 key
 Logs/
 
 
 !Antares/input/bindingconstraints/bindingconstraints.ini
-Balmorel/base/logerror/*
-Balmorel/base/data/COMBTECH_G.inc
-Balmorel/base/data/SOLE_VAR_T.inc
-Balmorel/base/data/WND_VAR_T.inc
-Balmorel/base/data/WND_VAR_T2.inc
-Balmorel/base/data/
+src/Balmorel/base/logerror/*
+src/Balmorel/base/data/COMBTECH_G.inc
+src/Balmorel/base/data/SOLE_VAR_T.inc
+src/Balmorel/base/data/WND_VAR_T.inc
+src/Balmorel/base/data/WND_VAR_T2.inc
+src/Balmorel/base/data/
 **/*.~*
 **/*.gdx
 **/*.accdb
@@ -31,8 +30,8 @@ Balmorel/base/data/
 **/*.dat
 **/*.cmd
 *.zip
-Workflow/MetaResults/*
-Workflow/OverallResults/*
+src/Workflow/MetaResults/*
+src/Workflow/OverallResults/*
 **Balmorel/base/model/Balmorel.l*
 **Balmorel/base/output/economic/*.*
 Balmorel/base/bui/gamsscr/*.*
@@ -62,13 +61,13 @@ Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-39.pyc
 
 
 .BAF-Env/*
-Workflow/Functions/__pycache__/Formatting.cpython-39.pyc
-Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-311.pyc
+src/Workflow/Functions/__pycache__/Formatting.cpython-39.pyc
+src/Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-311.pyc
 SmallAnalyses.py
-Pre-Processing/Timeseries Aggregation/*.png
-Pre-Processing/Timeseries Aggregation/*.pdf
+src/Pre-Processing/Timeseries Aggregation/*.png
+src/Pre-Processing/Timeseries Aggregation/*.pdf
 # AntaresAutoEdits.py
 Antares/BAF Data eur-system/*
-Workflow/__pycache__/*
+src/Workflow/__pycache__/*
 Balmorel/ik_model/data
 *.pyc
