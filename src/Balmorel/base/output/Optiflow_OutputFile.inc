@@ -158,7 +158,7 @@ VFLOWSTORAGE_Opti_C(Y,C,PROCSTORAGE,FLOW)=    SUM(IA$ICA(C,IA),VFLOWSTORAGE_Opti
 
 
 * RE-fuel prices
-Parameter RE_fuel_Price(Y,C,PROC,FLOW)'RE-fuel price (ï¿½ 2015/GJ)';
+Parameter RE_fuel_Price(Y,C,PROC,FLOW)'RE-fuel price (€ 2015/GJ)';
 RE_fuel_Price(Y,C,PROC,FLOW)=QMINFLOW_C.M(Y,C,PROC,FLOW) / IWEIGHTY(Y);
 
 
@@ -176,9 +176,8 @@ VFLOW_Opti_A,VFLOW_Opti_C,VFLOWSOURCE_Opti_A,VFLOWSOURCE_Opti_C,VFLOWTRANS_Opti_
 RE_fuel_Price
 $offtext
 
-execute_unload "Optiflow_MainResults_%PROJECTID%.gdx" VOBJ,VGKN,VX_T,VXKN,
-*VFLOW
-VFLOWTRANS,VPROCKAPNEW,
+execute_unload "Optiflow_MainResults.gdx" VOBJ,VGKN,VX_T,VXKN,
+VFLOW,VFLOWTRANS,VPROCKAPNEW,
 *RE_GasFuel_AST_Opti,RE_Fuel_AST_Opti_A,RE_Fuel_AST_Opti_C,RE_Gas_AST_Opti,RE_Gas_AST_Opti_A,RE_Gas_AST_Opti_C,
 *Resource_use_Opti_C,Resource_use_AST_Opti,Resource_use_Opti_A,
 VFLOW_Opti_A,VFLOW_Opti_C,VFLOWSOURCE_Opti_A,VFLOWSOURCE_Opti_C,VFLOWBUFFER_Opti_C
