@@ -10,3 +10,5 @@ dependencies:
   - plotly
   - nbformat
   - rpy2
+  - pip:
+    - pybalmorel
