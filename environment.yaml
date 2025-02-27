@@ -1,0 +1,12 @@
+name: BAF
+channels:
+  - conda-forge
+dependencies:
+  - matplotlib
+  - pandas
+  - openpyxl
+  - geopandas
+  - scipy
+  - plotly
+  - nbformat
+  - rpy2
