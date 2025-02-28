@@ -11,6 +11,7 @@ meaning this relatively scarce documentation will be extended over time.
 :hidden:
 
 getstarted
+preprocessing
 ```
 
 ```{toctree}
