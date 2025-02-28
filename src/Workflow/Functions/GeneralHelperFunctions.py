@@ -16,6 +16,7 @@ import os
 from typing import Union
 import time
 import sys
+import configparser
 
 #%% ------------------------------- ###
 ###          1. Logging etc.        ###
@@ -304,6 +305,29 @@ def get_capex(cap: pd.DataFrame, idx_cap: pd.Index, GDATA: pd.DataFrame, ANNUITY
 ###            5. Classes           ###
 ### ------------------------------- ###
 
+class BC:
+    """A class for handling the binding constraints of Antares"""
+
+    def __init__(self, path_to_antares_study: str = './Antares'):
+        self.study_path = path_to_antares_study
+        cf = configparser.ConfigParser()
+        cf.read(os.path.join(self.study_path, 'input/bindingconstraints/bindingconstraints.ini'))
+        
+        bc_name_to_idx = {}
+        section_names = []
+        for section in cf.sections():
+            name = cf.get(section, 'name')
+            bc_name_to_idx[name] = section
+            section_names.append(name)
+
+        self.sections = section_names
+        self._bc_name_to_idx = bc_name_to_idx
+        self._cf = cf
+
+    def get(self, section: str, parameter: str):
+        return self._cf.get(self._bc_name_to_idx[section], parameter)
+
+
 class IncFile:
     """A useful class for creating .inc-files for GAMS models 
     Args:
@@ -517,4 +541,16 @@ def check_antares_compilation(wait_sec: int, max_waits: int, N_errors: int):
         N_errors += 1
         
     return compile_finished, N_errors
+    
+
+if __name__ == '__main__':
+    
+    print('Test of loading binding constraint:')
+    cf = BC()
+    
+    print(
+        'Load fr_psp type and operator:',
+        cf.get('fr_psp', 'type'),
+        cf.get('fr_psp', 'operator')
+    )
     
