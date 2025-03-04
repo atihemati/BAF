@@ -317,21 +317,10 @@ class BC:
         section_names = []
         for section in cf.sections():
             name = cf.get(section, 'name')
-            
-            try:
-                bc_name_to_idx[name] # Check if already exists (can happen for bounded by both side constraint)
-                other_operator = cf.get(section, 'operator')
-                name = name + '_' + other_operator
+            # The operator is part of the filename in Antares 8.7
+            operator = cf.get(section, 'operator').replace('greater', 'gt').replace('less', 'lt').replace('equal', 'eq')
+            name = name + '_' + operator
                 
-                if name in bc_name_to_idx.keys():
-                    raise ValueError("You have named some binding constraint the same! Check %s"%name)
-                
-                section_names.append(name)
-                bc_name_to_idx[name] = section
-            except KeyError:
-                section_names.append(name)
-                bc_name_to_idx[name] = section
-
         self.sections = section_names
         self._bc_name_to_idx = bc_name_to_idx
         self._cf = cf
