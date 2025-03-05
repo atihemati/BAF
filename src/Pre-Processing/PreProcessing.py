@@ -209,38 +209,13 @@ def convert_to_52weeks(ctx, year: int, filename: str, values: str):
     """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
     
     filename = filename%year
-    df = append_neighbouring_years(filename, year, values)
+    df = pd.read_csv(filename)
     
-    # Convert to pandas datetime and GMT timezone
-    time = (
-        pd.to_datetime(df.index.to_series()) 
-        # .dt.tz_localize(timezone('UTC'))
-        # .dt.tz_convert(timezone('GMT'))
-    )
-    
-    # Get year, week and month
-    time = pd.DataFrame(
-        {
-            'year' : time.dt.year,
-            'week' : time.dt.isocalendar().week.astype('int32'),
-            'day' : time.dt.day_of_week + 1,
-            'month' : time.dt.month,
-            'hourclock' : time.dt.hour + 1
-        }
-    )
-    
-    # Find the first hour on the first monday (could be year before)
-    first_hour = time.query('day == 1 and week == 1 and hourclock == 1 and year <= @year').index[0]
-    
-    # Filter production timeseries to 52 weeks
-    df = df.loc[first_hour:].iloc[:8736]
+    # Just take first 52 weeks
+    df = df.iloc[:8736]
     
     # Apply S and T index
-    try:
-        df.index = ctx.obj['ST']
-    except ValueError:
-        print("Year %d only had %d indices"%(year, len(df.index)))
-        df.index = ctx.obj['ST'][:len(df.index)]
+    df.index = ctx.obj['ST']
     
     return df
 
@@ -251,32 +226,44 @@ def create_antares_VRE():
     filepaths = {
         'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
         'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
-        'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv'
-    }
-    
-    antares_paths = {
-        'offshore_wind' : 'offshore',
-        'onshore_wind' : 'onshore',
-        'solar_pv' : 'photovoltaics',
+        'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
+        'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv'
     }
     
     value_names = {
         'offshore_wind' : 'offshore_wind',
         'onshore_wind' : 'onshore_wind',
         'solar_pv' : 'pv',
+        'load' : 'non_thermosensitive'
+    }
+    
+    antares_input_paths = {
+        'offshore_wind' : 'Antares/input/renewables/series/%s/offshore/series.txt',
+        'onshore_wind' : 'Antares/input/renewables/series/%s/onshore/series.txt',
+        'solar_pv' : 'Antares/input/renewables/series/%s/photovoltaics/series.txt',
+        'load' : 'Antares/input/load/series/load_%s.txt',
     }
     
     for technology in filepaths.keys():
         stoch_year_data = {}
         for region in ['DE', 'CH', 'FR']:
             if len(stoch_year_data) == 0:
-                for year in np.arange(1982, 2016):
-                    stoch_year_data[year] = convert_to_52weeks(year, filepaths[technology], value_names[technology])
+                
+                if technology != 'load':
+                    for year in np.arange(1982, 2017):
+                        filename = filepaths[technology]%year
+                        print('Reading %s'%filename)
+                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                                columns='country', 
+                                                                                values=value_names[technology])
+                else:
+                    stoch_year_data[0] = pd.read_csv(filepaths[technology]).pivot_table(index='time_id',
+                                                                            columns='country', 
+                                                                            values=value_names[technology])
             
             try:   
                 data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
-                data_to_antares_input = pd.concat((data_to_antares_input, data_to_antares_input.iloc[:24]*0)) # Fill 23 extra zeros (we cut off the 366 day in Antares) 
-                data_to_antares_input.to_csv('Antares/input/renewables/series/%s/%s/series.txt'%(region.lower(), antares_paths[technology]),
+                data_to_antares_input.to_csv(antares_input_paths[technology]%(region.lower()),
                             index=False, header=False, sep='\t')
             except KeyError:
                 print('No %s for %s'%(technology, region))
