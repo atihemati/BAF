@@ -8,6 +8,7 @@ Created on 09-06-2023
 ### ------------------------------- ###
 
 import click
+from pytz import timezone
 import pandas as pd
 from pandas.errors import EmptyDataError
 import numpy as np
@@ -16,7 +17,7 @@ import os
 import sys
 sys.path.append('.')
 from Workflow.Functions.Formatting import newplot, nested_dict_to_df
-from Workflow.Functions.GeneralHelperFunctions import IncFile
+from pybalmorel import IncFile
 
 import pickle
 from scipy.optimize import curve_fit
@@ -42,6 +43,8 @@ except ModuleNotFoundError:
 def CLI(ctx):
     """The command line interface for pre-processing stuff"""
 
+    ctx.ensure_object(dict)
+
     ### 0.0 Load configuration file
     Config = configparser.ConfigParser()
     Config.read('Config.ini')
@@ -63,6 +66,51 @@ def CLI(ctx):
     elec_loss = 0.95        # See Murcia, Juan Pablo, Matti Juhani Koivisto, Graziela Luzia, Bjarke T. Olsen, Andrea N. Hahmann, Poul Ejnar Sørensen, and Magnus Als. “Validation of European-Scale Simulated Wind Speed and Wind Generation Time Series.” Applied Energy 305 (January 1, 2022): 117794. https://doi.org/10.1016/j.apenergy.2021.117794.
     year = 2050             # The year (analysing just one year for creating weights of electricity demand for different spatial resolutions)
 
+    # Detect which command has been passed
+    command = ctx.invoked_subcommand
+    if command in ['convert-to-52weeks']:
+        # Create S and T timeseries
+        ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
+        ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
+        ctx.obj['ST'] = pd.MultiIndex.from_product((ctx.obj['S'], ctx.obj['T']))
+
+def append_neighbouring_years(filename: str, year: int, values: str,
+                              index: str = 'timestamp', columns: str = 'country'):
+    """Include year before and after for year-separated .csv files"""
+    df = (
+        pd.read_csv(filename)
+        .pivot_table(index=index, columns=columns, values=values, aggfunc='sum',
+                     fill_value=0)   
+    )
+    
+    for neighbour_year in [year-1, year+1]:
+        neighbour_filename = filename.replace(str(year), str(neighbour_year))
+        # Check if file for neighbouring year exists
+        try:
+            temp = (
+            pd.read_csv(neighbour_filename)
+            .pivot_table(index=index, columns=columns, 
+                         values=values, aggfunc='sum',
+                        fill_value=0)   
+            )
+            
+            # Remove most of the year before and after, except two weeks
+            if neighbour_year == year - 1:
+                temp = temp.iloc[-72:]
+                df = pd.concat((temp, df))
+            elif neighbour_year == year + 1:
+                temp = temp.iloc[:72]
+                df = pd.concat((df, temp))
+            else:
+                raise ValueError('Something is wrong in finding neighbouring years!')
+
+        
+        except FileNotFoundError:
+            print("Couldn't find year %d of file %s"%(neighbour_year, neighbour_filename))
+
+    return df
+    
+    
 #%% ------------------------------- ###
 ###      1. Hardcoded Mappings      ###
 ### ------------------------------- ###
@@ -155,115 +203,47 @@ def generate_mapping(ctx):
 ### ------------------------------- ###
 
 @CLI.command()
+@click.argument('year', type=int, required=True)
+@click.pass_context
+def convert_to_52weeks(ctx, year: int, filename: str = 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv'):
+    """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
+    
+    filename = filename%year
+    df = append_neighbouring_years(filename, year, 'offshore_wind')
+    
+    # Convert to pandas datetime and GMT timezone
+    time = (
+        pd.to_datetime(df.index.to_series()) 
+        # .dt.tz_localize(timezone('UTC'))
+        # .dt.tz_convert(timezone('GMT'))
+    )
+    
+    # Get year, week and month
+    time = pd.DataFrame(
+        {
+            'year' : time.dt.year,
+            'week' : time.dt.isocalendar().week.astype('int32'),
+            'day' : time.dt.day_of_week + 1,
+            'month' : time.dt.month,
+            'hourclock' : time.dt.hour + 1
+        }
+    )
+    
+    # Find the first hour on the first monday (could be year before)
+    first_hour = time.query('day == 1 and week == 1 and hourclock == 1 and year <= @year').index[0]
+    
+    # Filter production timeseries to 52 weeks
+    df = df.loc[first_hour:].iloc[:8736]
+    
+    # Apply S and T index
+    df.index = ctx.obj['ST']
+    
+    return df
+    
+@CLI.command()
 @click.pass_context
 def old_preprocessing(ctx):
     """The old processing scripts"""
-    
-    ### 2.1 Solar and wind profiles
-    #   Since VRE modelling is switched to VRE clusters, all 5_, 6_, 7_, 8_ etc. data
-    #   was deleted! They are now stored in clusters of each region
-
-    VRE_group = {'solar' : 'Solar PV',
-                'wind' : 'Wind Onshore'}
-    for VRE in ['solar', 'wind']:
-        # Antares path to series from original model
-        p = r'C:\Users\mberos\ElementsOutside1D\BZModel\input\%s\series'%VRE 
-        l = pd.Series(os.listdir(p))
-        l = list(l)
-        
-        balmmap[VRE + '_AveFLH'] = 0
-
-        # for area in [area for area in A2B_regi.keys() if not(area in ['UKNI', 'GR03', 'ITCA', 'ITCS', 'ITS1', 'ITSA', 'ITSI'])]: # Delete Antares areas of higher resolution
-        for area in A2B_regi.keys():
-            
-            vreseries = pd.DataFrame(np.zeros((8760, 31)))
-            for subarea in ['VRE_*.txt', 'VRE_5_*_sres.txt', 'VRE_6_*_sres.txt',
-                            'VRE_7_*_sres.txt', 'VRE_8_*_sres.txt']:
-                
-                # Format
-                subarea = subarea.replace('VRE', VRE).replace('*', area.lower()).replace('lu00', 'lug1') # Remember Luxembourg was renamed from LUG1 to LU00
-
-                # Read series, if any data is available
-                try:
-                    f = pd.read_csv(p + '/' + subarea, delimiter='\t', header=None)
-                    f = f.loc[:, :stoch_years] # Filter stochastic years
-                    # print(subarea, 'flh = %0.2f'%(f.sum() / f.max().max()))
-                    vreseries += f
-                except (EmptyDataError, FileNotFoundError):
-                    pass
-                    # print('No %s file'%subarea)
-            
-            # Normalisation
-            max_prod = vreseries.max().max() / elec_loss
-            print('%s %s FLH = %0.2f'%(area, VRE, (vreseries.sum() / vreseries.max().max()).mean() if vreseries.sum().sum() > 1e-6 else 0 ))
-            # Save to balmmap
-            idx = balmmap.id == A2B_regi[area][0]
-            balmmap.loc[idx, VRE + '_AveFLH'] = (vreseries.sum() / vreseries.max().max()).mean() if vreseries.sum().sum() > 1e-6 else 0 
-
-            # if len(reg_name.split('_')) > 1:
-            #     print(reg_name)
-            #     cluster_name = reg_name.split('_')[1].upper() + '_%s_'%VRE + reg_name.split('_')[0]
-            #     reg_name = reg_name.split('_')[1]
-            # else:
-            #     cluster_name = reg_name.upper() + '_%s_0'%VRE
-            # reg_name = reg_name.upper()
-                
-            if max_prod >= 1e-6: 
-                # Create folder if it doesn't exist
-                # (f / max_prod).to_csv(ant_region.replace('.txt', '_normalised-data.txt'), sep='\t', header=None, index=None)            
-                (vreseries / max_prod).to_csv('Antares/input/renewables/series/%s/%s/series.txt'%(area.lower(), area.lower() + '_%s_0'%VRE), sep='\t', header=None, index=None)            
-            else:
-                pass
-                # ('').to_csv('Antares/input/renewables/series/%s/%s/series.txt'%(area.lower(), area.lower() + '_%s_0'%VRE), sep='\t', header=None, index=None)                
-                # (vreseries * 0).to_csv(ant_region.replace('.txt', '_normalised-data.txt'), sep='\t', header=None, index=None)
-        
-    ## Fix Germany and southern Norway for plotting the map
-    try:
-        for VRE in ['wind', 'solar']:
-            # balmmap.loc[balmmap.id == 'DE4-N', '%s_AveFLH'%VRE] = balmmap.loc[balmmap.id == 'DE4-E', '%s_AveFLH'%VRE].values[0]
-            # balmmap.loc[balmmap.id == 'DE4-W', '%s_AveFLH'%VRE] = balmmap.loc[balmmap.id == 'DE4-E', '%s_AveFLH'%VRE].values[0]
-            # balmmap.loc[balmmap.id == 'DE4-S', '%s_AveFLH'%VRE] = balmmap.loc[balmmap.id == 'DE4-E', '%s_AveFLH'%VRE].values[0]
-            # balmmap.loc[balmmap.id == 'NO2', '%s_AveFLH'%VRE]   = balmmap.loc[balmmap.id == 'NO1', '%s_AveFLH'%VRE].values[0]
-            # balmmap.loc[balmmap.id == 'NO5', '%s_AveFLH'%VRE]   = balmmap.loc[balmmap.id == 'NO1', '%s_AveFLH'%VRE].values[0]
-
-            
-
-            ### Plot the FLH
-            fig, ax = newplot(fc=fc, figsize=(10, 10))
-            balmmap.plot(column='%s_AveFLH'%VRE, ax=ax, legend=True,
-                        legend_kwds={'label' : '%s FLH (h)'%VRE.capitalize(),
-                                    'orientation' : 'horizontal'})
-            ax.set_xlim([-11, 30])
-            ax.set_ylim([35, 68])
-    except:
-        plot_maps = False
-        print("Geopandas probably not installed - can't plot maps")
-
-    #%% Set unitcount to 0 in clusters with no profiles
-    # NOTE: Obsolete after noticing that there is only a single profile pr. BZ
-    # for area in A2B_regi.keys():
-    #     for VRE in ['solar', 'wind']:
-    #         cluster_config = configparser.ConfigParser()
-    #         cluster_config.read('Antares/input/renewables/clusters/%s/list.ini'%(area.lower()))
-    #         for subarea in ['_0', '_5', '_6', '_7', '_8']:
-    #             # Antares path to series
-    #             p = 'Antares/input/renewables/series/%s/%s_%s%s/series.txt'%(area.lower(), area.lower(), VRE, subarea)
-                
-    #             try:
-    #                 f = pd.read_csv(p, delimiter='\t', header=None)
-                
-    #             except EmptyDataError:
-    #                 print('No data in %s_%s%s'%(area, VRE, subarea))                
-    #                 cluster_config.set('%s_%s%s'%(area, VRE, subarea), 'unitcount', '0')
-        
-    #             # Disable anything but 0
-    #             if subarea != '_0':
-    #                 cluster_config.set('%s_%s%s'%(area, VRE, subarea), 'enabled', 'false')
-    #                 cluster_config.set('%s_%s%s'%(area, VRE, subarea), 'unitcount', '0')
-            
-    #         with open('Antares/input/renewables/clusters/%s/list.ini'%(area.lower()), 'w') as configfile:
-    #             cluster_config.write(configfile)
-
     #%% Normalise Electricity and Hydrogen Demand Profiles
 
     ### NOTE: For new H2 regions in Antares it is assumed that, 
