@@ -68,7 +68,7 @@ def CLI(ctx):
 
     # Detect which command has been passed
     command = ctx.invoked_subcommand
-    if command in ['convert-to-52weeks']:
+    if command in ['create-antares-vre']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
@@ -94,12 +94,12 @@ def append_neighbouring_years(filename: str, year: int, values: str,
                         fill_value=0)   
             )
             
-            # Remove most of the year before and after, except two weeks
+            # Remove most of the year before and after, except one week
             if neighbour_year == year - 1:
-                temp = temp.iloc[-72:]
+                temp = temp.iloc[-168:]
                 df = pd.concat((temp, df))
             elif neighbour_year == year + 1:
-                temp = temp.iloc[:72]
+                temp = temp.iloc[:168]
                 df = pd.concat((df, temp))
             else:
                 raise ValueError('Something is wrong in finding neighbouring years!')
@@ -199,17 +199,17 @@ def generate_mapping(ctx):
         pickle.dump(BalmTechs, f)
 
 #%% ------------------------------- ###
-### 2. Normalise Antares Timeseries ###
+###         2. Timeseries           ###
 ### ------------------------------- ###
 
-@CLI.command()
-@click.argument('year', type=int, required=True)
+# @CLI.command()
+# @click.argument('year', type=int, required=True)
 @click.pass_context
-def convert_to_52weeks(ctx, year: int, filename: str = 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv'):
+def convert_to_52weeks(ctx, year: int, filename: str, values: str):
     """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
     
     filename = filename%year
-    df = append_neighbouring_years(filename, year, 'offshore_wind')
+    df = append_neighbouring_years(filename, year, values)
     
     # Convert to pandas datetime and GMT timezone
     time = (
@@ -236,9 +236,51 @@ def convert_to_52weeks(ctx, year: int, filename: str = 'Pre-Processing/Data/offs
     df = df.loc[first_hour:].iloc[:8736]
     
     # Apply S and T index
-    df.index = ctx.obj['ST']
+    try:
+        df.index = ctx.obj['ST']
+    except ValueError:
+        print("Year %d only had %d indices"%(year, len(df.index)))
+        df.index = ctx.obj['ST'][:len(df.index)]
     
     return df
+
+@CLI.command()
+def create_antares_VRE():
+    """Create production factor timeseries for Antares VRE"""
+    
+    filepaths = {
+        'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
+        'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
+        'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv'
+    }
+    
+    antares_paths = {
+        'offshore_wind' : 'offshore',
+        'onshore_wind' : 'onshore',
+        'solar_pv' : 'photovoltaics',
+    }
+    
+    value_names = {
+        'offshore_wind' : 'offshore_wind',
+        'onshore_wind' : 'onshore_wind',
+        'solar_pv' : 'pv',
+    }
+    
+    for technology in filepaths.keys():
+        stoch_year_data = {}
+        for region in ['DE', 'CH', 'FR']:
+            if len(stoch_year_data) == 0:
+                for year in np.arange(1982, 2016):
+                    stoch_year_data[year] = convert_to_52weeks(year, filepaths[technology], value_names[technology])
+            
+            try:   
+                data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
+                data_to_antares_input = pd.concat((data_to_antares_input, data_to_antares_input.iloc[:24]*0)) # Fill 23 extra zeros (we cut off the 366 day in Antares) 
+                data_to_antares_input.to_csv('Antares/input/renewables/series/%s/%s/series.txt'%(region.lower(), antares_paths[technology]),
+                            index=False, header=False, sep='\t')
+            except KeyError:
+                print('No %s for %s'%(technology, region))
+            
     
 @CLI.command()
 @click.pass_context
