@@ -39,8 +39,9 @@ except ModuleNotFoundError:
     balmmap = pd.DataFrame({'id' : 'a'},index=[0])
 
 @click.group()
+@click.option('--geo-scope', type=str, required=False, help="The geographical scope of the models")
 @click.pass_context
-def CLI(ctx):
+def CLI(ctx, geo_scope: str = "DE, CH, FR"):
     """The command line interface for pre-processing stuff"""
 
     ctx.ensure_object(dict)
@@ -66,6 +67,9 @@ def CLI(ctx):
     elec_loss = 0.95        # See Murcia, Juan Pablo, Matti Juhani Koivisto, Graziela Luzia, Bjarke T. Olsen, Andrea N. Hahmann, Poul Ejnar Sørensen, and Magnus Als. “Validation of European-Scale Simulated Wind Speed and Wind Generation Time Series.” Applied Energy 305 (January 1, 2022): 117794. https://doi.org/10.1016/j.apenergy.2021.117794.
     year = 2050             # The year (analysing just one year for creating weights of electricity demand for different spatial resolutions)
 
+    # Set geographical scope
+    ctx.obj['geographical_scope'] = geo_scope.replace(' ', '').split(',')
+    
     # Detect which command has been passed
     command = ctx.invoked_subcommand
     if command in ['create-antares-vre']:
@@ -73,6 +77,22 @@ def CLI(ctx):
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
         ctx.obj['ST'] = pd.MultiIndex.from_product((ctx.obj['S'], ctx.obj['T']))
+        
+    if command in ['create-antares-vre']:
+        # Create data filepaths
+        ctx.obj['data_filepaths'] = {
+            'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
+            'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
+            'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
+            'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv'
+        }
+        
+        ctx.obj['data_value_column'] = {
+            'offshore_wind' : 'offshore_wind',
+            'onshore_wind' : 'onshore_wind',
+            'solar_pv' : 'pv',
+            'load' : 'non_thermosensitive'
+        }
 
 def append_neighbouring_years(filename: str, year: int, values: str,
                               index: str = 'timestamp', columns: str = 'country'):
@@ -202,14 +222,12 @@ def generate_mapping(ctx):
 ###         2. Timeseries           ###
 ### ------------------------------- ###
 
-# @CLI.command()
-# @click.argument('year', type=int, required=True)
 @click.pass_context
 def convert_to_52weeks(ctx, year: int, filename: str, values: str):
     """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
     
     filename = filename%year
-    df = pd.read_csv(filename)
+    df = pd.read_csv(filename).pivot_table(index='time_id', columns='country', values=values)
     
     # Just take first 52 weeks
     df = df.iloc[:8736]
@@ -220,22 +238,12 @@ def convert_to_52weeks(ctx, year: int, filename: str, values: str):
     return df
 
 @CLI.command()
-def create_antares_VRE():
+@click.pass_context
+def create_antares_VRE(ctx):
     """Create production factor timeseries for Antares VRE"""
     
-    filepaths = {
-        'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
-        'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
-        'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
-        'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv'
-    }
-    
-    value_names = {
-        'offshore_wind' : 'offshore_wind',
-        'onshore_wind' : 'onshore_wind',
-        'solar_pv' : 'pv',
-        'load' : 'non_thermosensitive'
-    }
+    filepaths = ctx.obj['data_filepaths']
+    value_names = ctx.obj['data_value_column']
     
     antares_input_paths = {
         'offshore_wind' : 'Antares/input/renewables/series/%s/offshore/series.txt',
@@ -246,7 +254,7 @@ def create_antares_VRE():
     
     for technology in filepaths.keys():
         stoch_year_data = {}
-        for region in ['DE', 'CH', 'FR']:
+        for region in ctx.obj['geographical_scope']:
             if len(stoch_year_data) == 0:
                 
                 if technology != 'load':
@@ -273,7 +281,7 @@ def create_antares_VRE():
 @click.pass_context
 def old_preprocessing(ctx):
     """The old processing scripts"""
-    #%% Normalise Electricity and Hydrogen Demand Profiles
+    # Normalise Electricity and Hydrogen Demand Profiles
 
     ### NOTE: For new H2 regions in Antares it is assumed that, 
     #         TR = GR
@@ -313,7 +321,7 @@ def old_preprocessing(ctx):
         ax.set_xlim([-11, 30])
         ax.set_ylim([35, 68])
 
-    #%% Normalise Thermal Generation Profiles
+    # Normalise Thermal Generation Profiles
 
     ### NOTE: For new H2 regions in Antares it is assumed that, 
     #         TR = GR
@@ -341,112 +349,6 @@ def old_preprocessing(ctx):
         #     print('No load data in %s'%area)
     # ax.legend()
 
-
-    #%% ------------------------------- ###
-    ###         3. VRE Analysis         ###
-    ### ------------------------------- ###
-
-    ### NOTE: This section is outdated! Need to change so that data is gathered from clusters
-    #         ...and we won't be mapping actually (harmonising)
-
-    ### 3.1 Get Antares Data 
-    # ANT_FLH = pd.DataFrame(index=pd.MultiIndex(levels=[[],[]], codes=[[],[]]),
-    #                    columns=['solar', 'wind'])
-
-    # for area in A2B_regi.keys(): 
-    # # for VRE in ['solar', 'wind']:
-    #     # Antares path to series
-    #     p = 'Antares/input/renewables/series/%s'%area
-    #     l = pd.Series(os.listdir(p))
-
-    #     for vre_region in l: 
-    #     # for ant_region in [p + '%s_de00.txt'%VRE]:
-    #         VRE = vre_region.split('_')[1]
-            
-    #         # Read series, if any data is available
-    #         try:
-    #             f = pd.read_csv(p + '/' + vre_region + '/series.txt', delimiter='\t', header=None)
-    #             f = f.loc[:, :stoch_years] # Filter stochastic years
-                
-    #             cap = f.max().max()              # Estimates capacity as the highest production in all years
-    #             flh = (f / cap).sum()            # Estimation of FLH for all stochastic years
-                
-    #             ANT_FLH.loc[(vre_region, 'Mean'), VRE] = round(flh.mean(), 2)
-    #             # Std. Deviation of normalised production through a year, averaged by all stochastic years
-    #             ANT_FLH.loc[(vre_region, 'StdDev'), VRE] = round((f / cap).std().mean(), 2)
-    #             # Std. Deviation of FLH between stochastic years 
-    #             ANT_FLH.loc[(vre_region, 'StochStdDev'), VRE] = round(flh.std(), 2) 
-                                            
-    #         except EmptyDataError:
-    #             print('No data in %s'%vre_region)
-                
-            
-    # #%% 3.2 Get Balmorel Data
-    # BLM_FLH_WND = pd.read_excel('Pre-Processing/Data/BalmFLH.xlsx', sheet_name='WNDFLH', index_col=0)
-    # BLM_FLH_SOL = pd.read_excel('Pre-Processing/Data/BalmFLH.xlsx', sheet_name='SOLEFLH', index_col=0)
-    # BLM_FLH = pd.DataFrame({}, index=pd.Series(list(BLM_FLH_SOL.index) + list(BLM_FLH_WND.index)).unique())
-    # BLM_FLH.loc[BLM_FLH_SOL.index, 'solar'] = BLM_FLH_SOL.FLH.values
-    # BLM_FLH.loc[BLM_FLH_WND.index, 'wind'] = BLM_FLH_WND.FLH.values
-
-
-
-    # #%% 3.3 Map wind & solar regions between Balmorel and Antares
-
-    # ## This mapping will take a Balmorel area, and assign the Antares area
-    # ## with the closest mean FLH to it.
-
-    # # The container
-    # VRE_MAPPING = pd.DataFrame(index=[], columns=['AntArea', 'BalmArea', 'Tech', 'FLH Difference [h]', 'Balm FLH Type'])
-
-    # # Map Balmorel VRE areas to Antares Areas 
-    # for VRE in ['solar', 'wind']:
-    #     for ind in BLM_FLH[VRE].dropna().index:
-    #         BLM_FLH0 = BLM_FLH.loc[ind, VRE] # Load Balmorel FLH
-            
-    #         # Balmorel Region
-    #         R = ind.split('_')[0]
-    #         # Search
-    #         for ant_area in B2A_regi[R]:
-    #             try:
-                    
-    #                 # Find Antares series
-    #                 csearch = pd.Series(ANT_FLH.reset_index()['level_0'])
-                    
-    #                 idx = ant_area.lower() == csearch.str[:4]  # Assuming length 4 of region name
-                    
-                    
-    #                 # print('Balmorel:')
-    #                 # print(ind[0], VRE, round(BLM_FLH0), 'h')
-    #                 # print('Antares:')
-    #                 temp = ANT_FLH.loc[idx,'Mean',:][VRE]
-    #                 # print(temp)
-    #                 # Find lowest difference
-    #                 dif_arr = temp-BLM_FLH0
-    #                 dif0 = np.abs(dif_arr).min()
-    #                 # Get sign
-    #                 s = np.sign(dif_arr[dif0 == np.abs(dif_arr)].values[0])
-    #                 ant_area = dif_arr[dif0 == np.abs(dif_arr)].index[0][0]
-                    
-
-    #                 VRE_MAPPING = pd.concat((VRE_MAPPING, pd.DataFrame({'BalmArea' : [ind], 'AntArea' : [ant_area.replace('_normalised-data', '')],
-    #                                                                     'Tech' : [VRE], 'FLH Difference [h]' : [s*dif0],
-    #                                                                     'Balm FLH Type' : ['FLH Input']})), ignore_index=True)
-    #             except KeyError:
-    #                 pass
-    #                 # print('%s not found in B2A mapping'%R)
-
-    # # Save it
-    # VRE_MAPPING.to_csv('Pre-Processing/Output/AreaMapping.csv')
-
-    # # # Illustrate difference
-    # # for tech in ['solar', 'wind']:
-    # #     idx = VRE_MAPPING['Tech'] == tech 
-    # #     fig, ax = plt.subplots(figsize=(15, 5))
-    # #     ax.plot(VRE_MAPPING.loc[idx, 'FLH Difference [h]'], 'o')
-    # #     ax.set_title(tech)
-    # #     ax.set_ylabel('FLH Difference [h]')
-    # #     ax.set_xticks(VRE_MAPPING.loc[idx, :].index)
-    # #     ax.set_xticklabels(VRE_MAPPING.loc[idx, 'BalmArea'], rotation=90)
 
 
 
