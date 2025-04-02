@@ -1,22 +1,26 @@
 [workspace]
 channels = ["conda-forge"]
 name = "BAF"
-platforms = ["linux-64"]
+platforms = ["linux-64", "win-64"]
 version = "0.1.0"
 
 [tasks]
+antares-vre = "cd src && pixi run python Pre-Processing/preprocessing.py create-antares-vre"
+create-BAF-mappings = "cd src && python Pre-Processing/preprocessing.py generate-mapping"
 
 [dependencies]
-matplotlib = "*"
-pandas = "*"
-openpyxl = "*"
-geopandas = "*"
-scipy = "*"
-plotly = "*"
-nbformat = "*"
-rpy2 = "*"
-click = "*"
-tsam = "*"
+pandas = "==2.2.3"
+openpyxl = "==3.1.5"
+geopandas = "==1.0.1"
+scipy = "==1.15.2"
+plotly = "==6.0.0"
+numpy = "==2.2.3"
+matplotlib = "==3.10.0"
+python = "==3.12.9"
+requests = "==2.32.3"
+rpy2 = "==3.5.11"
+click = "==8.1.8"
+tsam = "==2.3.6"
 
 [pypi-dependencies]
-pybalmorel = "*"
+pybalmorel = "==0.5.3"

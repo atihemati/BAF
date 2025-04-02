@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "create-antares-vre",
+            "type": "shell",
+            "command": "cd src && python Pre-Processing/preprocessing.py create-antares-vre",
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "create-BAF-mappings",
+            "type": "shell",
+            "command": "cd src && python Pre-Processing/preprocessing.py generate-mapping",
+            "problemMatcher": []
+        }
+    ]
+}
