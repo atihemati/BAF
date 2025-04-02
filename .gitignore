@@ -71,3 +71,6 @@ Antares/BAF Data eur-system/*
 src/Workflow/__pycache__/*
 Balmorel/ik_model/data
 *.pyc
+# pixi environments
+.pixi
+*.egg-info

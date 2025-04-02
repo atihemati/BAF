@@ -1,0 +1,22 @@
+[workspace]
+channels = ["conda-forge"]
+name = "BAF"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+matplotlib = "*"
+pandas = "*"
+openpyxl = "*"
+geopandas = "*"
+scipy = "*"
+plotly = "*"
+nbformat = "*"
+rpy2 = "*"
+click = "*"
+tsam = "*"
+
+[pypi-dependencies]
+pybalmorel = "*"
