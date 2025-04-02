@@ -8,7 +8,6 @@ Created on 09-06-2023
 ### ------------------------------- ###
 
 import click
-from pytz import timezone
 import pandas as pd
 from pandas.errors import EmptyDataError
 import numpy as np
@@ -39,9 +38,9 @@ except ModuleNotFoundError:
     balmmap = pd.DataFrame({'id' : 'a'},index=[0])
 
 @click.group()
-@click.option('--geo-scope', type=str, required=False, help="The geographical scope of the models")
+@click.option('--geo-scope', type=str, required=False, default="DE, CH, FR", help="The geographical scope of the models")
 @click.pass_context
-def CLI(ctx, geo_scope: str = "DE, CH, FR"):
+def CLI(ctx, geo_scope: str):
     """The command line interface for pre-processing stuff"""
 
     ctx.ensure_object(dict)
@@ -72,7 +71,7 @@ def CLI(ctx, geo_scope: str = "DE, CH, FR"):
     
     # Detect which command has been passed
     command = ctx.invoked_subcommand
-    if command in ['create-antares-vre']:
+    if command in ['create-antares-vre', 'create-balmorel-hydro']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
@@ -253,21 +252,23 @@ def create_antares_VRE(ctx):
     }
     
     for technology in filepaths.keys():
+        
+        # Load input data
         stoch_year_data = {}
+        if technology != 'load':
+            for year in np.arange(1982, 2017):
+                filename = filepaths[technology]%year
+                print('Reading %s'%filename)
+                stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                        columns='country', 
+                                                                        values=value_names[technology])
+        else:
+            stoch_year_data[0] = pd.read_csv(filepaths[technology]).pivot_table(index='time_id',
+                                                                    columns='country', 
+                                                                    values=value_names[technology])
+        
+        # Create matrix of input that Antares expects
         for region in ctx.obj['geographical_scope']:
-            if len(stoch_year_data) == 0:
-                
-                if technology != 'load':
-                    for year in np.arange(1982, 2017):
-                        filename = filepaths[technology]%year
-                        print('Reading %s'%filename)
-                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
-                                                                                columns='country', 
-                                                                                values=value_names[technology])
-                else:
-                    stoch_year_data[0] = pd.read_csv(filepaths[technology]).pivot_table(index='time_id',
-                                                                            columns='country', 
-                                                                            values=value_names[technology])
             
             try:   
                 data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
@@ -275,8 +276,155 @@ def create_antares_VRE(ctx):
                             index=False, header=False, sep='\t')
             except KeyError:
                 print('No %s for %s'%(technology, region))
-            
     
+    
+@CLI.command()
+@click.pass_context    
+def create_balmorel_vre(ctx):
+    pass
+
+
+### ------------------------------- ###
+###             5. Hydro            ###
+### ------------------------------- ###
+@CLI.command()
+@click.pass_context
+def create_balmorel_hydro(ctx, balm_year: int = 2000):
+    """Create Balmorel input data for hydropower"""
+
+    ### 5.0 Read parameters
+    # E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
+    balm_year = balm_year - 1982
+
+    # Balmorel timestamps
+    S = ctx.obj['S']
+    T = ctx.obj['T']
+    balmtime_index = ['%s . %s'%(S0, T0) for S0 in S for T0 in T]
+
+    # The mapping
+    A2B_regi = pickle.load(open('Pre-Processing/Output/A2B_regi.pkl', 'rb'))
+    
+    # Other
+    incfile_prefix_path = 'Pre-Processing/Data/IncFile Prefixes'
+
+    ### 5.1 Prepare placeholders
+    hydro_res = configparser.ConfigParser()
+    hydro_res.read('Antares/input/hydro/hydro.ini')
+
+    hydro_AAA = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
+    # GNR_RES_WTR_NOPMP (100 % efficiency)
+    # GNR_RES_WTR_PMP_MC-01 (100 % efficiency)
+    hydro_GKFX = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro_2\n'
+    hydro_WTRRRFLH = ''
+    hydro_WTRRSFLH = ''
+    hydro_WTRRSVAR_S = pd.DataFrame(index=S)
+    hydro_WTRRRVAR_T = pd.DataFrame(index=balmtime_index)
+    hydro_HYRSMAXVOL_G = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
+
+    for area in A2B_regi.keys():
+        
+        ### Reservoir power capacity and pumping eff in the area itself
+        try:
+            turb_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[0].max() # MW
+            pump_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[2].max() # MW
+            
+            res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%area.lower(), header=None) # MW
+
+            # Summing weekly flows for Balmorel
+            hydro_WTRRSVAR_S['%s_A'%area] = res_series.rolling(window=7).sum()[6::7][balm_year].values
+            
+            # FLH
+            hydro_WTRRSFLH += "%s_A\t\t%0.2f\n"%(area, ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
+            
+
+                        
+            # Make .inc file commands
+            hydro_AAA += '%s_A\n'%area 
+            if pump_cap == 0:
+                G = 'GNR_RES_WTR_NOPMP'
+                hydro_GKFX += "GKFX(YYY,'%s_A','%s') = %0.2f;\n"%(area, G, turb_cap)
+            else:
+                G = 'GNR_RES_WTR_PMP_MC-01'
+                hydro_GKFX += "GKFX(YYY,'%s_A','%s') = %0.2f;\n"%(area, G, turb_cap)
+            
+            # See if there's a reservoir capacity
+            try:
+                res_cap = hydro_res.getfloat('reservoir capacity', area)
+                hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_A', '%s') = %0.2f;\n"%(area, G, res_cap/turb_cap)
+            except configparser.NoOptionError:
+                hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_A', '%s') = %0.2f;\n"%(area, G, 0)
+            
+        except EmptyDataError:
+            # No reservoir storage in area
+            pass
+
+        ### Run of river in the area itself
+        try:
+            ror_series = pd.read_table('Antares/input/hydro/series/%s/ror.txt'%area.lower(), header=None) # MW
+            ror_cap = ror_series.max().max()
+
+            # Make .inc file commands        
+            if not('%s_A'%area in hydro_AAA):
+                hydro_AAA += '%s_A\n'%area 
+                
+            hydro_WTRRRVAR_T['%s_A'%area] = ror_series.loc[:8735, balm_year].values
+            
+            hydro_WTRRRFLH += "%s_A\t\t%0.2f\n"%(area, ((ror_series[balm_year]).sum())/(8760*ror_cap)*8760)
+
+            
+            hydro_GKFX += "GKFX(YYY, '%s_A', 'GNR_ROR_WTR') = %0.2f;\n"%(area, ror_cap)
+        except EmptyDataError:
+            pass
+
+        ### Pumped Hydro Storage (No inflow) 
+        for hydro_area in ['00_PSP_STO']:
+            
+            try:
+                turb_cap = pd.read_table('Antares/input/links/%s/capacities/%s_direct.txt'%(hydro_area, area.lower()), header=None).max()[0]
+                
+                # .inc file commands
+                # Note that this capacity is defined in MWh! Thus factored the unloading parameter GDSTOHUNLD of  9.4 
+                hydro_GKFX += "GKFX(YYY, '%s_A', 'GNR_ES_WTR_PMP') = %0.2f;\n"%(area, turb_cap*9.4)
+                
+            except FileNotFoundError:
+                pass
+            
+            #'GNR_ES_WTR_PMP' changed to 75% efficiency in GKFX incfile prefix
+
+    # End with dont_adjust_hydro label, to make it an option
+    hydro_GKFX += '$label dont_adjust_hydro_2\n'
+    hydro_AAA += '$label dont_adjust_hydro\n'
+
+    # Create incfiles
+    incfiles = {incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, balm_year)) for incfile in pd.Series(os.listdir(incfile_prefix_path)).str.rstrip('.inc')}
+
+    # Fill in Hydro from earlier
+    incfiles['ANTBALM_WTRRRVAR_T'].body = hydro_WTRRRVAR_T.to_string()
+    incfiles['ANTBALM_WTRRSVAR_S'].body = hydro_WTRRSVAR_S.to_string()
+    incfiles['ANTBALM_WTRRRFLH'].body = hydro_WTRRRFLH
+    incfiles['ANTBALM_WTRRSFLH'].body = hydro_WTRRSFLH
+    incfiles['ANTBALM_HYRSMAXVOL_G'].body = hydro_HYRSMAXVOL_G
+    incfiles['ANTBALM_CCCRRRAAA'].body = hydro_AAA
+    incfiles['ANTBALM_AAA'].body = hydro_AAA
+    for line in hydro_AAA.split('\n'):
+        if (line != '') & (line != '$label dont_adjust_hydro') & (line != '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro'):
+            incfiles['ANTBALM_RRRAAA'].body += "RRRAAA('%s', '%s') = YES;\n"%(A2B_regi[line.split('_')[0]][0], line)
+            
+    # Placeholders for 3 sections in ANTBALM_GKFX
+    incfiles['ANTBALM_GKFX'].body1 = hydro_GKFX
+    incfiles['ANTBALM_GKFX'].body2 = ''
+    incfiles['ANTBALM_GKFX'].body3 = ''
+    incfiles['ANTBALM_WTRRRVAR_T'].suffix   = "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;\n$label dont_adjust_hydro"
+    incfiles['ANTBALM_WTRRSVAR_S'].suffix   = "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;\n$label dont_adjust_hydro"
+    incfiles['ANTBALM_HYRSMAXVOL_G'].suffix = '$label dont_adjust_hydro'
+    incfiles['ANTBALM_WTRRRFLH'].suffix = "/;\n$label dont_adjust_hydro"
+    incfiles['ANTBALM_WTRRSFLH'].suffix = "/;\n$label dont_adjust_hydro"
+
+    ## Save
+    for key in incfiles.keys():
+        incfiles[key].save()
+
+
 @CLI.command()
 @click.pass_context
 def old_preprocessing(ctx):

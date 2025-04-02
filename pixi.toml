@@ -7,6 +7,7 @@ version = "0.1.0"
 [tasks]
 antares-vre = "cd src && pixi run python Pre-Processing/preprocessing.py create-antares-vre"
 create-BAF-mappings = "cd src && python Pre-Processing/preprocessing.py generate-mapping"
+create-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py create-balmorel-hydro"
 
 [dependencies]
 pandas = "==2.2.3"
