@@ -289,12 +289,12 @@ def generate_balmorel_vre(ctx):
 ### ------------------------------- ###
 @CLI.command()
 @click.pass_context
-def generate_balmorel_hydro(ctx, balm_year: int = 2000):
+def generate_balmorel_hydro(ctx, weather_year: int = 2000):
     """generate Balmorel input data for hydropower"""
 
     # Read parameters
     ## E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
-    balm_year = balm_year - 1982
+    weather_year = weather_year - 1982
 
     ## Balmorel timestamps
     S = ctx.obj['S']
@@ -303,9 +303,6 @@ def generate_balmorel_hydro(ctx, balm_year: int = 2000):
 
     ## The mapping
     A2B_regi = pickle.load(open('Pre-Processing/Output/A2B_regi.pkl', 'rb'))
-    
-    ## Other
-    incfile_prefix_path = 'Pre-Processing/Data/IncFile Prefixes'
 
     # Prepare placeholders
     hydro_res = configparser.ConfigParser()
@@ -331,10 +328,10 @@ def generate_balmorel_hydro(ctx, balm_year: int = 2000):
             res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%area.lower(), header=None) # MW
 
             # Summing weekly flows for Balmorel
-            hydro_WTRRSVAR_S['%s_A'%area] = res_series.rolling(window=7).sum()[6::7][balm_year].values
+            hydro_WTRRSVAR_S['%s_A'%area] = res_series.rolling(window=7).sum()[6::7][weather_year].values
             
             # FLH
-            hydro_WTRRSFLH += "%s_A\t\t%0.2f\n"%(area, ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
+            hydro_WTRRSFLH += "%s_A\t\t%0.2f\n"%(area, ((res_series[weather_year]).sum())/(8760*turb_cap)*8760)
               
             # Make .inc file commands
             hydro_AAA += '%s_A\n'%area 
@@ -345,10 +342,13 @@ def generate_balmorel_hydro(ctx, balm_year: int = 2000):
                 G = 'GNR_RES_WTR_PMP_MC-01'
                 hydro_GKFX += "GKFX(YYY,'%s_A','%s') = %0.2f;\n"%(area, G, turb_cap)
             
+            print('Found reservoir data..')
+            
             # See if there's a reservoir capacity
             try:
                 res_cap = hydro_res.getfloat('reservoir capacity', area)
                 hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_A', '%s') = %0.2f;\n"%(area, G, res_cap/turb_cap)
+                print('..with pump')
             except configparser.NoOptionError:
                 hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_A', '%s') = %0.2f;\n"%(area, G, 0)
             
@@ -365,12 +365,13 @@ def generate_balmorel_hydro(ctx, balm_year: int = 2000):
             if not('%s_A'%area in hydro_AAA):
                 hydro_AAA += '%s_A\n'%area 
                 
-            hydro_WTRRRVAR_T['%s_A'%area] = ror_series.loc[:8735, balm_year].values
+            hydro_WTRRRVAR_T['%s_A'%area] = ror_series.loc[:8735, weather_year].values
             
-            hydro_WTRRRFLH += "%s_A\t\t%0.2f\n"%(area, ((ror_series[balm_year]).sum())/(8760*ror_cap)*8760)
+            hydro_WTRRRFLH += "%s_A\t\t%0.2f\n"%(area, ((ror_series[weather_year]).sum())/(8760*ror_cap)*8760)
 
             
             hydro_GKFX += "GKFX(YYY, '%s_A', 'GNR_ROR_WTR') = %0.2f;\n"%(area, ror_cap)
+            print('Found run-of-river data..')
         except EmptyDataError:
             pass
 
@@ -383,37 +384,37 @@ def generate_balmorel_hydro(ctx, balm_year: int = 2000):
                 # .inc file commands
                 # Note that this capacity is defined in MWh! Thus factored the unloading parameter GDSTOHUNLD of  9.4 
                 hydro_GKFX += "GKFX(YYY, '%s_A', 'GNR_ES_WTR_PMP') = %0.2f;\n"%(area, turb_cap*9.4)
-                
+                print('Found pumped hydro data..')
+
             except FileNotFoundError:
                 pass
             
             #'GNR_ES_WTR_PMP' changed to 75% efficiency in GKFX incfile prefix
 
-    # Create incfiles
-    incfiles = {incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, balm_year)) for incfile in pd.Series(os.listdir(incfile_prefix_path)).str.rstrip('.inc')}
-
-    # Fill in Hydro from earlier
-    incfiles['WTRRRVAR_T'].body = hydro_WTRRRVAR_T.to_string()
-    incfiles['WTRRSVAR_S'].body = hydro_WTRRSVAR_S.to_string()
-    incfiles['WTRRRFLH'].body = hydro_WTRRRFLH
-    incfiles['WTRRSFLH'].body = hydro_WTRRSFLH
-    incfiles['HYRSMAXVOL_G'].body = hydro_HYRSMAXVOL_G
-    incfiles['CCCRRRAAA'].body = hydro_AAA
-    incfiles['AAA'].body = hydro_AAA
-            
-    # Placeholders for 3 sections in ANTBALM_GKFX
-    incfiles['GKFX'].body1 = hydro_GKFX
-    incfiles['GKFX'].body2 = ''
-    incfiles['GKFX'].body3 = ''
-    incfiles['WTRRRVAR_T'].suffix   = "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['WTRRSVAR_S'].suffix   = "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['HYRSMAXVOL_G'].suffix = '$label dont_adjust_hydro'
-    incfiles['WTRRRFLH'].suffix = "/;\n$label dont_adjust_hydro"
-    incfiles['WTRRSFLH'].suffix = "/;\n$label dont_adjust_hydro"
-
+    # Create 
+    incfiles = create_incfiles(['WTRRSVAR_S', 'WTRRSFLH', 'WTRRRVAR_T', 'WTRRRFLH', 'HYRSMAXVOL_G'], weather_year,
+                               bodies={'WTRRSVAR_S' : hydro_WTRRSVAR_S.to_string(),
+                                       'WTRRRVAR_T' : hydro_WTRRRVAR_T.to_string(),
+                                       'WTRRRFLH' : hydro_WTRRRFLH,
+                                       'WTRRSFLH' : hydro_WTRRSFLH,
+                                       'HYRSMAXVOL_G' : hydro_HYRSMAXVOL_G},
+                               suffixes={'WTRRRVAR_T' : "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;",
+                                         'WTRRSVAR_S' : "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;",
+                                         'WTRRRFLH' : "/;",
+                                         'WTRRSFLH' : "/;"})
+    
     # Save
     for key in incfiles.keys():
         incfiles[key].save()
+        
+    # Other incfiles that should change accordingly:    
+    # incfiles['CCCRRRAAA'].body = hydro_AAA
+    # incfiles['AAA'].body = hydro_AAA
+            
+    # Placeholders for 3 sections in ANTBALM_GKFX
+    # incfiles['GKFX'].body1 = hydro_GKFX
+    # incfiles['GKFX'].body2 = ''
+    # incfiles['GKFX'].body3 = ''
 
 
 @CLI.command()
@@ -1061,6 +1062,60 @@ def old_preprocessing(ctx):
         D = distance_matrix(x=balmmap.geometry.centroid.x,
                             y=balmmap.geometry.centroid.y)
 
+# Utilities
+def ReadIncFilePrefix(name: str, 
+                      incfile_prefix_path: str, 
+                      weather_year: int):
+    """Reads an .inc file that should just contain the prefix of the incfile
+
+    Args:
+        name (str): Name of the incfile
+        incfile_prefix_path (str): Path to where the related prefix .inc file is
+        weather_year (int): The weather year, which is relevant for the description of some .inc files.
+
+    Returns:
+        _type_: _description_
+    """
+    if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)) | ('WTR' in name):
+        string = "* Weather year %d from Antares\n"%(weather_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+    else:
+        string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+    
+    return string
+
+def create_incfiles(names: list, 
+                    weather_year: int,
+                    bodies: dict = None, 
+                    suffixes: dict = None,
+                    incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
+    """A convenient way to create many incfiles and fill in predefined prefixes, bodies and suffixes
+
+    Args:
+        names (list): Names of the incfiles created (without .inc)
+        weather_year (int): The weather year for weather dependent parameters.
+        bodies (dict, optional): bodies of the incfiles. Defaults to None.
+        suffixes (dict, optional): suffixes of the incfiles. Defaults to None.
+        incfile_prefix_path (str, optional): path to the prefixes of the incfiles. Defaults to 'Pre-Processing/Data/IncFile Prefixes'.
+        
+    Returns:
+        incfiles (dict): Dictionary of incfiles
+    """
+    
+    incfiles = {
+        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, weather_year)) \
+            for incfile in names \
+                if os.path.exists(os.path.join(incfile))
+    }
+    
+    if bodies != None:
+        for incfile in bodies.keys():
+            incfiles[incfile].body = bodies[incfile]
+            
+    if suffixes != None:
+        for incfile in suffixes.keys():
+            incfiles[incfile].suffix = suffixes[incfile]
+
+    return incfiles
 
 ### Main
 if __name__ == '__main__':
