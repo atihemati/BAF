@@ -39,8 +39,9 @@ except ModuleNotFoundError:
 
 @click.group()
 @click.option('--geo-scope', type=str, required=False, default="DE, CH, FR", help="The geographical scope of the models")
+@click.option('--weather-year', type=int, required=False, default=2000, help="The weather year for Balmorel timeseries input")
 @click.pass_context
-def CLI(ctx, geo_scope: str):
+def CLI(ctx, geo_scope: str, weather_year: int):
     """The command line interface for pre-processing stuff"""
 
     ### 0.0 Load configuration file
@@ -92,6 +93,16 @@ def CLI(ctx, geo_scope: str):
             'load' : 'non_thermosensitive'
         }
 
+        if command == 'generate-balmorel-vre':
+            ctx.obj['weather_years'] = [weather_year]
+        elif command == 'generate-antares-vre':
+            ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
+                                        1987, 1988, 1989, 1990, 1991, 
+                                        1992, 1993, 1994, 1995, 1996, 
+                                        1997, 1998, 1999, 2000, 2001, 
+                                        2002, 2003, 2004, 2005, 2006, 
+                                        2007, 2008, 2009, 2010, 2011, 
+                                        2012, 2013, 2014, 2015, 2016]
 
 
 ### ------------------------------- ###
@@ -151,6 +162,7 @@ def create_incfiles(names: list,
 
     return incfiles
 
+
 def load_OSMOSE_data(func):
     """Load data from OSMOSE and do something with func(*args, **kwargs)"""
     
@@ -158,13 +170,14 @@ def load_OSMOSE_data(func):
     def wrapper(ctx, *args, **kwargs):
         data_filepaths = ctx.obj['data_filepaths']
         value_names = ctx.obj['data_value_column']
+        weather_years = ctx.obj['weather_years']
         
         for data in data_filepaths.keys():
             
             # Load input data
             stoch_year_data = {}
             if data != 'load':
-                for year in np.arange(1982, 2017):
+                for year in weather_years:
                     filename = data_filepaths[data]%year
                     print('Reading %s'%filename)
                     stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
@@ -215,7 +228,25 @@ def append_neighbouring_years(filename: str, year: int, values: str,
 
     return df
     
+@click.pass_context
+def convert_to_52weeks(ctx, year: int, filename: str, values: str):
+    """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
     
+    filename = filename%year
+    df = pd.read_csv(filename).pivot_table(index='time_id', columns='country', values=values)
+    
+    # Just take first 52 weeks
+    df = df.iloc[:8736]
+    
+    # Apply S and T index
+    df.index = ctx.obj['ST']
+    
+    return df
+
+def list_of_str(value):
+    return value.replace(' ', '').split(',')
+
+
 #%% ------------------------------- ###
 ###        Hardcoded Mappings       ###
 ### ------------------------------- ###
@@ -307,20 +338,6 @@ def generate_mappings(ctx):
 ###            Timeseries           ###
 ### ------------------------------- ###
 
-@click.pass_context
-def convert_to_52weeks(ctx, year: int, filename: str, values: str):
-    """Convert timeseries to start on first hour of first monday and be 52 weeks long"""
-    
-    filename = filename%year
-    df = pd.read_csv(filename).pivot_table(index='time_id', columns='country', values=values)
-    
-    # Just take first 52 weeks
-    df = df.iloc[:8736]
-    
-    # Apply S and T index
-    df.index = ctx.obj['ST']
-    
-    return df
 
 @CLI.command()
 @click.pass_context
@@ -345,10 +362,19 @@ def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_pa
     
     
 @CLI.command()
-@click.pass_context    
-def generate_balmorel_vre(ctx):
+@click.pass_context   
+@load_OSMOSE_data 
+def generate_balmorel_vre(ctx, data: str, stoch_year_data: dict):
     """Generate Balmorel input data for VRE (except hydro)"""
-    pass
+    
+    # Create .inc files that Balmorel expects
+    for region in ctx.obj['geographical_scope']:
+        
+        try:   
+            data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
+            print(data_to_antares_input)
+        except KeyError:
+            print('No %s for %s'%(data, region))
 
 
 ### ------------------------------- ###
@@ -646,335 +672,7 @@ def old_preprocessing(ctx):
 
     A2B_DH2_weights = {}
 
-    for ant_area in A2B_regi_h2.keys():
-        
-        A2B_DH2_weights[ant_area] = {}
-        total_dem = np.sum([f.loc[(f.R == balm_area) & (f.Y == year), 'Val'].sum() for balm_area in A2B_regi_h2[ant_area]])
-        
-        for balm_area in A2B_regi_h2[ant_area]:
-            
-            r_dem = f.loc[(f.R == balm_area) & (f.Y == year), 'Val'].sum()
-            
-            # Save share of electricity demand in dict
-            val = r_dem / total_dem
-            if pd.isna(val):
-                print('No demand, setting to 1')
-                A2B_DH2_weights[ant_area][balm_area] = 1.0
-            else:
-                A2B_DH2_weights[ant_area][balm_area] = val
-                
-            # Print the share of demand in that region
-            print(ant_area, balm_area, r_dem / total_dem*100, '%')
-
-
-    ### 3.4 Save A2B DE weight dictionary
-    with open('Pre-Processing/Output/A2B_DH2_weights.pkl', 'wb') as f:
-        pickle.dump(A2B_DH2_weights, f) 
-
-    #%% ------------------------------- ###
-    ###             5. Hydro            ###
-    ### ------------------------------- ###
-
-    ### 5.0 Choose parameters
-    # 27 = 2009, the worst year (note we start counting from 0 here, compared to in Antares UI!). 
-    # 30 = 2012, the average year in Balmorel (note we start counting from 0 here, compared to in Antares UI!)
-    balm_year = 30
-
-    # Whether or not to create FLH based on input data or Antares output
-    compute_FLH_on_input = True
-    ant_output = '20231219-2246eco-hydrotestquickfix_iter0_y-2050'
-    mc_choice = '00001' # Should be aligned to the balm_year chosen..
-
-    # Balmorel timestamps
-    S = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
-    T = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
-    balmtime_index = ['%s . %s'%(S0, T0) for S0 in S for T0 in T]
-
-    ### 5.1 Prepare placeholders
-    hydro_res = configparser.ConfigParser()
-    hydro_res.read('Antares/input/hydro/hydro.ini')
-
-    hydro_AAA = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
-    # GNR_RES_WTR_NOPMP (100 % efficiency)
-    # GNR_RES_WTR_PMP_MC-01 (100 % efficiency)
-    hydro_GKFX = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro_2\n'
-    hydro_WTRRRFLH = ''
-    hydro_WTRRSFLH = ''
-    hydro_WTRRSVAR_S = pd.DataFrame(index=S)
-    hydro_WTRRRVAR_T = pd.DataFrame(index=balmtime_index)
-    hydro_HYRSMAXVOL_G = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
-
-    for area in A2B_regi.keys():
-        
-        ### 5.2 Reservoir power capacity and pumping eff in the area itself
-        try:
-            turb_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[0].max() # MW
-            pump_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[2].max() # MW
-            
-            res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%area.lower(), header=None) # MW
-
-            # Summing weekly flows for Balmorel
-            hydro_WTRRSVAR_S['%s_hydro0'%area] = res_series.rolling(window=7).sum()[6::7][balm_year].values
-            
-            if compute_FLH_on_input:
-                # FLH
-                hydro_WTRRSFLH += "%s_hydro0\t\t%0.2f\n"%(area, 
-                                                                    ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
-            else:
-                res_dispatch = pd.read_table('Antares/output/' + ant_output +\
-                                        '/economy/mc-ind/%s/areas/%s/values-hourly.txt'%(mc_choice, area.lower()),
-                                        skiprows=[0,1,2,3,5,6])['H. STOR'] 
-                hydro_WTRRSFLH += "%s_hydro0\t\t%0.2f\n"%(area, 
-                                                                    res_dispatch.sum()/(8760*turb_cap)*8760)
-
-                        
-            # Make .inc file commands
-            hydro_AAA += '%s_hydro0\n'%area 
-            if pump_cap == 0:
-                G = 'GNR_RES_WTR_NOPMP'
-                hydro_GKFX += "GKFX(YYY,'%s_hydro0','%s') = %0.2f;\n"%(area, G, turb_cap)
-            else:
-                G = 'GNR_RES_WTR_PMP_MC-01'
-                hydro_GKFX += "GKFX(YYY,'%s_hydro0','%s') = %0.2f;\n"%(area, G, turb_cap)
-            
-            # See if there's a reservoir capacity
-            try:
-                res_cap = hydro_res.getfloat('reservoir capacity', area)
-                hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_hydro0', '%s') = %0.2f;\n"%(area, G, res_cap/turb_cap)
-            except configparser.NoOptionError:
-                hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_hydro0', '%s') = %0.2f;\n"%(area, G, 0)
-            
-        except EmptyDataError:
-            # No reservoir storage in area
-            pass
-
-        ### 5.3 Run of river in the area itself
-        try:
-            ror_series = pd.read_table('Antares/input/hydro/series/%s/ror.txt'%area.lower(), header=None) # MW
-            ror_cap = ror_series.max().max()
-
-            # Make .inc file commands        
-            if not('%s_hydro0'%area in hydro_AAA):
-                hydro_AAA += '%s_hydro0\n'%area 
-                
-            hydro_WTRRRVAR_T['%s_hydro0'%area] = ror_series.loc[:8735, balm_year].values
-            
-            if compute_FLH_on_input:
-                # FLH
-                hydro_WTRRRFLH += "%s_hydro0\t\t%0.2f\n"%(area,
-                                                                    ((ror_series[balm_year]).sum())/(8760*ror_cap)*8760)
-            else:
-                ror_dispatch = pd.read_table('Antares/output/' + ant_output +\
-                                        '/economy/mc-ind/%s/areas/%s/values-hourly.txt'%(mc_choice, area.lower()),
-                                        skiprows=[0,1,2,3,5,6])['H. ROR'] 
-                hydro_WTRRRFLH += "%s_hydro0\t\t%0.2f\n"%(area, 
-                                                                    ror_dispatch.sum()/(8760*ror_cap)*8760)
-                    
-            
-            hydro_GKFX += "GKFX(YYY, '%s_hydro0', 'GNR_ROR_WTR') = %0.2f;\n"%(area, ror_cap)
-        except EmptyDataError:
-            pass
-
-        ### 5.4 Individual Hydro Areas
-        for hydro_area in ['2_*_HYDRO_OPEN', '3_*_HYDRO_RES', '4_*_HYDRO_SWELL']:
-            hydro_a0 = hydro_area.replace('*', area).lower()
-            
-            
-            
-            # Swell areas have run-of-river and reservoir, but no storage
-            if 'SWELL' in hydro_area:
-                try:
-                    turb_cap = pd.read_table('Antares/input/links/%s/capacities/%s_direct.txt'%(hydro_a0, area.lower()), header=None).max()[0]
-                                    
-                    res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%hydro_a0, header=None) # MW
-
-                    # Summing weekly flows for Balmorel
-                    hydro_WTRRSVAR_S['%s_hydro%s'%(area, hydro_a0[0])] = res_series.rolling(window=7).sum()[6::7][balm_year].values
-                    
-                    if compute_FLH_on_input:
-                        # FLH
-                        hydro_WTRRSFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                            ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
-                    else:
-                        res_dispatch = pd.read_table('Antares/output/' + ant_output +\
-                                    '/economy/mc-ind/%s/links/%s/values-hourly.txt'%(mc_choice, hydro_a0 + ' - %s'%area.lower()),
-                                    skiprows=[0,1,2,3,5,6])['FLOW LIN.']
-                        hydro_WTRRSFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                            ((res_dispatch).sum())/(8760*turb_cap)*8760)                    
-                                            
-                    ror_series = pd.read_table('Antares/input/hydro/series/%s/ror.txt'%hydro_a0, header=None) # MW 
-                    hydro_WTRRRVAR_T['%s_hydro%s'%(area, hydro_a0[0])] = ror_series.loc[:8735, balm_year].values
-                    
-                    if compute_FLH_on_input:
-                        # FLH
-                        hydro_WTRRRFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                            ((ror_series[balm_year]).sum())/(8760*turb_cap)*8760)
-                    else:
-                        hydro_WTRRRFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                            ((res_dispatch).sum())/(8760*turb_cap)*8760)                    
-                    # .inc file commands
-                    hydro_AAA += '%s_hydro%s\n'%(area, hydro_a0[0]) 
-                                            
-                    # Balmorel accounts for a reservoir + ror area not using double capacity:
-                    hydro_GKFX += "GKFX(YYY, '%s_hydro%s', 'GNR_RES_WTR_NOPMP') = %0.2f;\n"%(area, hydro_a0[0], turb_cap/2)
-                    hydro_GKFX += "GKFX(YYY, '%s_hydro%s', 'GNR_ROR_WTR') = %0.2f;\n"%(area, hydro_a0[0], turb_cap/2)
-                    # print(hydro_a0, 'worked')
-                    # print(area, " had swell area")
-                except FileNotFoundError:
-                    pass
-            else:
-                try:
-                    
-                    if (hydro_a0 == '2_pt00_hydro_open'):
-                        turb_cap = pd.read_table('Antares/input/thermal/series/w_hydro/maxturbopen_%s/series.txt'%(hydro_a0), header=None)[balm_year].max()
-                        pump_cap = pd.read_table('Antares/input/thermal/series/w_hydro/maxpumpopen_%s/series.txt'%(hydro_a0), header=None)[balm_year].max()
-                        # print(hydro_a0, '2_cap:', turb_cap, pump_cap)
-                    elif ('RES' in hydro_area):
-                        turb_cap = pd.read_table('Antares/input/thermal/series/w_hydro/pmaxreservoir_%s/series.txt'%(hydro_a0), header=None)[balm_year].max()
-                        pump_cap = pd.read_table('Antares/input/thermal/series/w_hydro/pmaxreservoir_%s/series.txt'%(hydro_a0), header=None)[balm_year].max()
-                        # print(hydro_a0, '3_cap:', turb_cap, pump_cap)
-                        
-                    else:
-                        turb_cap = pd.read_table('Antares/input/links/%s/capacities/%s_direct.txt'%(hydro_a0, area.lower()), header=None).max()[0]
-                        pump_cap = pd.read_table('Antares/input/links/%s/capacities/%s_indirect.txt'%(hydro_a0, area.lower()), header=None).max()[0]
-                    
-                    # Check if there's inflow, or if it's just a pumped storage
-                    try:
-                        res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%hydro_a0, header=None) # MW
-
-                        # Summing weekly flows for Balmorel
-                        hydro_WTRRSVAR_S['%s_hydro%s'%(area, hydro_a0[0])] = res_series.rolling(window=7).sum()[6::7][balm_year].values
-                        
-                        if compute_FLH_on_input:
-                            # FLH
-                            hydro_WTRRSFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                                ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
-                        else:
-                            res_dispatch = pd.read_table('Antares/output/' + ant_output +\
-                                        '/economy/mc-ind/%s/links/%s/values-hourly.txt'%(mc_choice, hydro_a0 + ' - %s'%area.lower()),
-                                        skiprows=[0,1,2,3,5,6])['FLOW LIN.']
-                            hydro_WTRRSFLH += "%s_hydro%s\t\t%0.2f\n"%(area, hydro_a0[0],
-                                                                                ((res_dispatch).sum())/(8760*turb_cap)*8760)                    
-                                
-                        # .inc file commands
-                        hydro_AAA += '%s_hydro%s\n'%(area, hydro_a0[0]) 
-                        if pump_cap == 0:
-                            G = 'GNR_RES_WTR_NOPMP'
-                            hydro_GKFX += "GKFX(YYY,'%s_hydro%s','%s') = %0.2f;\n"%(area, hydro_a0[0], G, turb_cap)
-                        else:
-                            G = 'GNR_RES_WTR_PMP_MC-01'
-                            hydro_GKFX += "GKFX(YYY,'%s_hydro%s','%s') = %0.2f;\n"%(area, hydro_a0[0], G, turb_cap)
-                        
-                        # See if there's a reservoir capacity
-                        try:
-                            res_cap = hydro_res.getfloat('reservoir capacity', hydro_a0)
-                            hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_hydro%s', '%s') = %0.2f;\n"%(area, hydro_a0[0], G, res_cap/turb_cap)
-                        except configparser.NoOptionError:
-                            hydro_HYRSMAXVOL_G += "HYRSMAXVOL_G('%s_hydro%s', '%s') = %0.2f;\n"%(area, hydro_a0[0], G, 0)
-                        # print(area, " had inflow")
-                    except:
-                        print(hydro_a0, 'is exclusively pumped storage')
-                
-                except FileNotFoundError:
-                    pass
-
-
-        ### 5.5 Pumped Hydro Storage (No inflow) 
-        for hydro_area in ['1_TURB_closed']:
-            
-            try:
-                turb_cap = pd.read_table('Antares/input/links/%s/capacities/%s_direct.txt'%(hydro_area, area.lower()), header=None).max()[0]
-                
-                # Found as exclusive pumped storage before, so add to this capacity
-                if (area == 'FR00') | (area == 'MK00'):
-                    turb_cap += pd.read_table('Antares/input/links/2_%s_hydro_open/capacities/%s_direct.txt'%(area.lower(), area.lower()), header=None).max()[0]
-                
-                # .inc file commands
-                # Note that this capacity is defined in MWh! Thus factored the unloading parameter GDSTOHUNLD of  9.4 
-                hydro_GKFX += "GKFX(YYY, '%s_A', 'GNR_ES_WTR_PMP') = %0.2f;\n"%(area, turb_cap*9.4)
-                
-            except FileNotFoundError:
-                pass
-            
-            #'GNR_ES_WTR_PMP' changed to 75% efficiency in GKFX incfile prefix
-            
-            
-        # pro = pd.DataFrame(columns=['Hour', 'Area', 'Tect', 'Value'])
-        # pro.loc[hour, 'Antares', area, 'Water', 'HYDRO-RESERVOIRS'] = f.loc[0, 'H. STOR'] / 1e6
-        # pro.loc[hour, 'Antares', area, 'Water', 'HYDRO-RUN-OF-RIVER'] = f.loc[0, 'H. ROR'] / 1e6
-        
-        
-        
-        
-        ## Modelled as virtual units (missing 0_pump_open for 2_*_hydro_open, but doesn't interact with BZ's)
-        # for hydro_area in ['1_PUMP_closed', '1_TURB_closed', '2_*_HYDRO_OPEN', '3_*_HYDRO_RES', '4_*_HYDRO_SWELL']:
-        #     try:
-        #         # This is the production, which is need for FLH estimation
-        #         f = pd.read_table('Antares/output/' + ant_output +\
-        #                 '/economy/%s/links/%s/values-hourly.txt'%(mc_choice, hydro_area.replace('*', area).lower() + ' - %s'%area.lower()),
-        #                 skiprows=[0,1,2,3,5,6]) 
-                
-        #         pro = pd.concat(())  
-                
-        #         # Get link capacities in input/links/%s/capacities/%s_direct.txt or %s_indirect.txt
-                
-        #     except:
-        #         print('No connection between %s and %s'%(hydro_area.replace('*', area), area))                
-
-
-    # End with dont_adjust_hydro label, to make it an option
-    hydro_GKFX += '$label dont_adjust_hydro_2\n'
-    hydro_AAA += '$label dont_adjust_hydro\n'
-
-
-    #%% ------------------------------- ###
-    ###        6. Harmonisation         ###
-    ### ------------------------------- ###
-
-    ### 6.1 Choose stochastic year for balmorel input
-    # 27 = 2009, the worst year (note we start counting from 0 here, compared to in Antares UI!). 
-    # 30 = 2012, the average year in Balmorel (note we start counting from 0 here, compared to in Antares UI!)
-    # balm_year = 30 # This is chosen already in hydro section
-
-
-
-    ### 6.2 Hardcoded, first parts of the .inc files (easier to edit and define in GAMS)
-    incfile_prefix_path = 'Pre-Processing/Data/IncFile Prefixes'
-    def ReadIncFilePrefix(name):
-        global balm_year
-        global incfile_prefix_path
-        
-        if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('WTR' in name):
-            string = "* Weather year %d from Antares\n"%(balm_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
-        else:
-            string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
-        
-        return string
-
-    incfiles = {incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile)) for incfile in pd.Series(os.listdir('Pre-Processing/Data/IncFile Prefixes')).str.rstrip('.inc')}
-
-    # Fill in Hydro from earlier
-    incfiles['ANTBALM_WTRRRVAR_T'].body = hydro_WTRRRVAR_T.to_string()
-    incfiles['ANTBALM_WTRRSVAR_S'].body = hydro_WTRRSVAR_S.to_string()
-    incfiles['ANTBALM_WTRRRFLH'].body = hydro_WTRRRFLH
-    incfiles['ANTBALM_WTRRSFLH'].body = hydro_WTRRSFLH
-    incfiles['ANTBALM_HYRSMAXVOL_G'].body = hydro_HYRSMAXVOL_G
-    incfiles['ANTBALM_CCCRRRAAA'].body = hydro_AAA
-    incfiles['ANTBALM_AAA'].body = hydro_AAA
-    for line in hydro_AAA.split('\n'):
-        if (line != '') & (line != '$label dont_adjust_hydro') & (line != '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro'):
-            incfiles['ANTBALM_RRRAAA'].body += "RRRAAA('%s', '%s') = YES;\n"%(A2B_regi[line.split('_')[0]][0], line)
-            
-    # Placeholders for 3 sections in ANTBALM_GKFX
-    incfiles['ANTBALM_GKFX'].body1 = hydro_GKFX
-    incfiles['ANTBALM_GKFX'].body2 = ''
-    incfiles['ANTBALM_GKFX'].body3 = ''
-    incfiles['ANTBALM_WTRRRVAR_T'].suffix   = "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_WTRRSVAR_S'].suffix   = "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_HYRSMAXVOL_G'].suffix = '$label dont_adjust_hydro'
-    incfiles['ANTBALM_WTRRRFLH'].suffix = "/;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_WTRRSFLH'].suffix = "/;\n$label dont_adjust_hydro"
-
+    
 
     ### 6.3 Balmorel timestamps
     S = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
