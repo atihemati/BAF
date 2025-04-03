@@ -16,9 +16,9 @@
             "problemMatcher": []
         },
         {
-            "label": "create-BAF-mappings",
+            "label": "generate-mappings",
             "type": "shell",
-            "command": "cd src && python Pre-Processing/preprocessing.py generate-mapping",
+            "command": "cd src && python Pre-Processing/preprocessing.py generate-mappings",
             "problemMatcher": []
         }
     ]

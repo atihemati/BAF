@@ -71,13 +71,13 @@ def CLI(ctx, geo_scope: str):
     
     # Detect which command has been passed
     command = ctx.invoked_subcommand
-    if command in ['create-antares-vre', 'create-balmorel-hydro']:
+    if command in ['generate-antares-vre', 'generate-balmorel-hydro']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
-        ctx.obj['ST'] = pd.MultiIndex.from_product((ctx.obj['S'], ctx.obj['T']))
+        ctx.obj['ST'] = [S + ' . ' + T for S in ctx.obj['S'] for T in ctx.obj['T']]
         
-    if command in ['create-antares-vre']:
+    if command in ['generate-antares-vre']:
         # Create data filepaths
         ctx.obj['data_filepaths'] = {
             'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
@@ -136,7 +136,7 @@ def append_neighbouring_years(filename: str, year: int, values: str,
 
 @CLI.command()
 @click.pass_context
-def generate_mapping(ctx):
+def generate_mappings(ctx):
     """Generates spatial and technological mappings between Balmorel and Antares"""
     
     ### 1.1 Regions for A2B2A Mapping
@@ -238,8 +238,8 @@ def convert_to_52weeks(ctx, year: int, filename: str, values: str):
 
 @CLI.command()
 @click.pass_context
-def create_antares_VRE(ctx):
-    """Create production factor timeseries for Antares VRE"""
+def generate_antares_VRE(ctx):
+    """generate production factor timeseries for Antares VRE"""
     
     filepaths = ctx.obj['data_filepaths']
     value_names = ctx.obj['data_value_column']
@@ -280,7 +280,7 @@ def create_antares_VRE(ctx):
     
 @CLI.command()
 @click.pass_context    
-def create_balmorel_vre(ctx):
+def generate_balmorel_vre(ctx):
     pass
 
 
@@ -289,40 +289,40 @@ def create_balmorel_vre(ctx):
 ### ------------------------------- ###
 @CLI.command()
 @click.pass_context
-def create_balmorel_hydro(ctx, balm_year: int = 2000):
-    """Create Balmorel input data for hydropower"""
+def generate_balmorel_hydro(ctx, balm_year: int = 2000):
+    """generate Balmorel input data for hydropower"""
 
-    ### 5.0 Read parameters
-    # E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
+    # Read parameters
+    ## E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
     balm_year = balm_year - 1982
 
-    # Balmorel timestamps
+    ## Balmorel timestamps
     S = ctx.obj['S']
     T = ctx.obj['T']
-    balmtime_index = ['%s . %s'%(S0, T0) for S0 in S for T0 in T]
+    ST = ctx.obj['ST']
 
-    # The mapping
+    ## The mapping
     A2B_regi = pickle.load(open('Pre-Processing/Output/A2B_regi.pkl', 'rb'))
     
-    # Other
+    ## Other
     incfile_prefix_path = 'Pre-Processing/Data/IncFile Prefixes'
 
-    ### 5.1 Prepare placeholders
+    # Prepare placeholders
     hydro_res = configparser.ConfigParser()
     hydro_res.read('Antares/input/hydro/hydro.ini')
 
-    hydro_AAA = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
+    hydro_AAA = '\n'
     # GNR_RES_WTR_NOPMP (100 % efficiency)
     # GNR_RES_WTR_PMP_MC-01 (100 % efficiency)
-    hydro_GKFX = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro_2\n'
+    hydro_GKFX = '\n'
     hydro_WTRRRFLH = ''
     hydro_WTRRSFLH = ''
     hydro_WTRRSVAR_S = pd.DataFrame(index=S)
-    hydro_WTRRRVAR_T = pd.DataFrame(index=balmtime_index)
-    hydro_HYRSMAXVOL_G = '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro\n'
+    hydro_WTRRRVAR_T = pd.DataFrame(index=ST)
+    hydro_HYRSMAXVOL_G = '\n'
 
     for area in A2B_regi.keys():
-        
+        print('Generating hydro data for %s'%area)
         ### Reservoir power capacity and pumping eff in the area itself
         try:
             turb_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[0].max() # MW
@@ -335,9 +335,7 @@ def create_balmorel_hydro(ctx, balm_year: int = 2000):
             
             # FLH
             hydro_WTRRSFLH += "%s_A\t\t%0.2f\n"%(area, ((res_series[balm_year]).sum())/(8760*turb_cap)*8760)
-            
-
-                        
+              
             # Make .inc file commands
             hydro_AAA += '%s_A\n'%area 
             if pump_cap == 0:
@@ -391,36 +389,29 @@ def create_balmorel_hydro(ctx, balm_year: int = 2000):
             
             #'GNR_ES_WTR_PMP' changed to 75% efficiency in GKFX incfile prefix
 
-    # End with dont_adjust_hydro label, to make it an option
-    hydro_GKFX += '$label dont_adjust_hydro_2\n'
-    hydro_AAA += '$label dont_adjust_hydro\n'
-
     # Create incfiles
     incfiles = {incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, balm_year)) for incfile in pd.Series(os.listdir(incfile_prefix_path)).str.rstrip('.inc')}
 
     # Fill in Hydro from earlier
-    incfiles['ANTBALM_WTRRRVAR_T'].body = hydro_WTRRRVAR_T.to_string()
-    incfiles['ANTBALM_WTRRSVAR_S'].body = hydro_WTRRSVAR_S.to_string()
-    incfiles['ANTBALM_WTRRRFLH'].body = hydro_WTRRRFLH
-    incfiles['ANTBALM_WTRRSFLH'].body = hydro_WTRRSFLH
-    incfiles['ANTBALM_HYRSMAXVOL_G'].body = hydro_HYRSMAXVOL_G
-    incfiles['ANTBALM_CCCRRRAAA'].body = hydro_AAA
-    incfiles['ANTBALM_AAA'].body = hydro_AAA
-    for line in hydro_AAA.split('\n'):
-        if (line != '') & (line != '$label dont_adjust_hydro') & (line != '$ifi not %ADJUSTHYDRO%==yes $goto dont_adjust_hydro'):
-            incfiles['ANTBALM_RRRAAA'].body += "RRRAAA('%s', '%s') = YES;\n"%(A2B_regi[line.split('_')[0]][0], line)
+    incfiles['WTRRRVAR_T'].body = hydro_WTRRRVAR_T.to_string()
+    incfiles['WTRRSVAR_S'].body = hydro_WTRRSVAR_S.to_string()
+    incfiles['WTRRRFLH'].body = hydro_WTRRRFLH
+    incfiles['WTRRSFLH'].body = hydro_WTRRSFLH
+    incfiles['HYRSMAXVOL_G'].body = hydro_HYRSMAXVOL_G
+    incfiles['CCCRRRAAA'].body = hydro_AAA
+    incfiles['AAA'].body = hydro_AAA
             
     # Placeholders for 3 sections in ANTBALM_GKFX
-    incfiles['ANTBALM_GKFX'].body1 = hydro_GKFX
-    incfiles['ANTBALM_GKFX'].body2 = ''
-    incfiles['ANTBALM_GKFX'].body3 = ''
-    incfiles['ANTBALM_WTRRRVAR_T'].suffix   = "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_WTRRSVAR_S'].suffix   = "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_HYRSMAXVOL_G'].suffix = '$label dont_adjust_hydro'
-    incfiles['ANTBALM_WTRRRFLH'].suffix = "/;\n$label dont_adjust_hydro"
-    incfiles['ANTBALM_WTRRSFLH'].suffix = "/;\n$label dont_adjust_hydro"
+    incfiles['GKFX'].body1 = hydro_GKFX
+    incfiles['GKFX'].body2 = ''
+    incfiles['GKFX'].body3 = ''
+    incfiles['WTRRRVAR_T'].suffix   = "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;\n$label dont_adjust_hydro"
+    incfiles['WTRRSVAR_S'].suffix   = "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;\n$label dont_adjust_hydro"
+    incfiles['HYRSMAXVOL_G'].suffix = '$label dont_adjust_hydro'
+    incfiles['WTRRRFLH'].suffix = "/;\n$label dont_adjust_hydro"
+    incfiles['WTRRSFLH'].suffix = "/;\n$label dont_adjust_hydro"
 
-    ## Save
+    # Save
     for key in incfiles.keys():
         incfiles[key].save()
 
