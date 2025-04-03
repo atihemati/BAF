@@ -4,7 +4,7 @@ Created on 09-06-2023
 @author: Mathias Berg Rosendal, PhD Student at DTU Management (Energy Economics & Modelling)
 """
 #%% ------------------------------- ###
-###       0. Script Settings        ###
+###          Script Settings        ###
 ### ------------------------------- ###
 
 import click
@@ -17,7 +17,7 @@ import sys
 sys.path.append('.')
 from Workflow.Functions.Formatting import newplot, nested_dict_to_df
 from pybalmorel import IncFile
-
+from functools import wraps
 import pickle
 from scipy.optimize import curve_fit
 from scipy.spatial import distance_matrix
@@ -43,12 +43,10 @@ except ModuleNotFoundError:
 def CLI(ctx, geo_scope: str):
     """The command line interface for pre-processing stuff"""
 
-    ctx.ensure_object(dict)
-
     ### 0.0 Load configuration file
     Config = configparser.ConfigParser()
     Config.read('Config.ini')
-    UseAntaresData = Config.get('PeriProcessing', 'UseAntaresData').lower() == 'true' 
+    UseAntaresData = Config.getboolean('PeriProcessing', 'UseAntaresData') 
         
     style = 'report'
 
@@ -64,20 +62,21 @@ def CLI(ctx, geo_scope: str):
     normalise = True        # Normalise when calculating FLH from BALM timeseries? 
     stoch_years = 35        # Amount of stochastic years
     elec_loss = 0.95        # See Murcia, Juan Pablo, Matti Juhani Koivisto, Graziela Luzia, Bjarke T. Olsen, Andrea N. Hahmann, Poul Ejnar Sørensen, and Magnus Als. “Validation of European-Scale Simulated Wind Speed and Wind Generation Time Series.” Applied Energy 305 (January 1, 2022): 117794. https://doi.org/10.1016/j.apenergy.2021.117794.
-    year = 2050             # The year (analysing just one year for creating weights of electricity demand for different spatial resolutions)
+    model_year = 2050       # The model year (analysing just one year for creating weights of electricity demand for different spatial resolutions)
 
     # Set geographical scope
+    ctx.ensure_object(dict)
     ctx.obj['geographical_scope'] = geo_scope.replace(' ', '').split(',')
     
     # Detect which command has been passed
     command = ctx.invoked_subcommand
-    if command in ['generate-antares-vre', 'generate-balmorel-hydro']:
+    if command in ['generate-antares-vre', 'generate-balmorel-hydro', 'generate-balmorel-vre']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
         ctx.obj['ST'] = [S + ' . ' + T for S in ctx.obj['S'] for T in ctx.obj['T']]
         
-    if command in ['generate-antares-vre']:
+    if command in ['generate-antares-vre', 'generate-balmorel-vre']:
         # Create data filepaths
         ctx.obj['data_filepaths'] = {
             'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
@@ -92,6 +91,93 @@ def CLI(ctx, geo_scope: str):
             'solar_pv' : 'pv',
             'load' : 'non_thermosensitive'
         }
+
+
+
+### ------------------------------- ###
+###            Utilities            ###
+### ------------------------------- ###
+def ReadIncFilePrefix(name: str, 
+                      incfile_prefix_path: str, 
+                      weather_year: int):
+    """Reads an .inc file that should just contain the prefix of the incfile
+
+    Args:
+        name (str): Name of the incfile
+        incfile_prefix_path (str): Path to where the related prefix .inc file is
+        weather_year (int): The weather year, which is relevant for the description of some .inc files.
+
+    Returns:
+        _type_: _description_
+    """
+    if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)) | ('WTR' in name):
+        string = "* Weather year %d from Antares\n"%(weather_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+    else:
+        string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+    
+    return string
+
+def create_incfiles(names: list, 
+                    weather_year: int,
+                    bodies: dict = None, 
+                    suffixes: dict = None,
+                    incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
+    """A convenient way to create many incfiles and fill in predefined prefixes, bodies and suffixes
+
+    Args:
+        names (list): Names of the incfiles created (without .inc)
+        weather_year (int): The weather year for weather dependent parameters.
+        bodies (dict, optional): bodies of the incfiles. Defaults to None.
+        suffixes (dict, optional): suffixes of the incfiles. Defaults to None.
+        incfile_prefix_path (str, optional): path to the prefixes of the incfiles. Defaults to 'Pre-Processing/Data/IncFile Prefixes'.
+        
+    Returns:
+        incfiles (dict): Dictionary of incfiles
+    """
+    
+    incfiles = {
+        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, weather_year)) \
+            for incfile in names \
+                if os.path.exists(os.path.join(incfile))
+    }
+    
+    if bodies != None:
+        for incfile in bodies.keys():
+            incfiles[incfile].body = bodies[incfile]
+            
+    if suffixes != None:
+        for incfile in suffixes.keys():
+            incfiles[incfile].suffix = suffixes[incfile]
+
+    return incfiles
+
+def load_OSMOSE_data(func):
+    """Load data from OSMOSE and do something with func(*args, **kwargs)"""
+    
+    @wraps(func)
+    def wrapper(ctx, *args, **kwargs):
+        data_filepaths = ctx.obj['data_filepaths']
+        value_names = ctx.obj['data_value_column']
+        
+        for data in data_filepaths.keys():
+            
+            # Load input data
+            stoch_year_data = {}
+            if data != 'load':
+                for year in np.arange(1982, 2017):
+                    filename = data_filepaths[data]%year
+                    print('Reading %s'%filename)
+                    stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                            columns='country', 
+                                                                            values=value_names[data])
+            else:
+                stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
+                                                                        columns='country', 
+                                                                        values=value_names[data])
+            
+            func(ctx, data, stoch_year_data, *args, **kwargs)
+    
+    return wrapper
 
 def append_neighbouring_years(filename: str, year: int, values: str,
                               index: str = 'timestamp', columns: str = 'country'):
@@ -131,7 +217,7 @@ def append_neighbouring_years(filename: str, year: int, values: str,
     
     
 #%% ------------------------------- ###
-###      1. Hardcoded Mappings      ###
+###        Hardcoded Mappings       ###
 ### ------------------------------- ###
 
 @CLI.command()
@@ -218,7 +304,7 @@ def generate_mappings(ctx):
         pickle.dump(BalmTechs, f)
 
 #%% ------------------------------- ###
-###         2. Timeseries           ###
+###            Timeseries           ###
 ### ------------------------------- ###
 
 @click.pass_context
@@ -238,59 +324,40 @@ def convert_to_52weeks(ctx, year: int, filename: str, values: str):
 
 @CLI.command()
 @click.pass_context
-def generate_antares_VRE(ctx):
-    """generate production factor timeseries for Antares VRE"""
-    
-    filepaths = ctx.obj['data_filepaths']
-    value_names = ctx.obj['data_value_column']
-    
-    antares_input_paths = {
+@load_OSMOSE_data
+def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_paths = {
         'offshore_wind' : 'Antares/input/renewables/series/%s/offshore/series.txt',
         'onshore_wind' : 'Antares/input/renewables/series/%s/onshore/series.txt',
         'solar_pv' : 'Antares/input/renewables/series/%s/photovoltaics/series.txt',
         'load' : 'Antares/input/load/series/load_%s.txt',
-    }
+    }):
+    """Generate production factor timeseries for Antares VRE"""
     
-    for technology in filepaths.keys():
+    # Create matrix of input that Antares expects
+    for region in ctx.obj['geographical_scope']:
         
-        # Load input data
-        stoch_year_data = {}
-        if technology != 'load':
-            for year in np.arange(1982, 2017):
-                filename = filepaths[technology]%year
-                print('Reading %s'%filename)
-                stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
-                                                                        columns='country', 
-                                                                        values=value_names[technology])
-        else:
-            stoch_year_data[0] = pd.read_csv(filepaths[technology]).pivot_table(index='time_id',
-                                                                    columns='country', 
-                                                                    values=value_names[technology])
-        
-        # Create matrix of input that Antares expects
-        for region in ctx.obj['geographical_scope']:
-            
-            try:   
-                data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
-                data_to_antares_input.to_csv(antares_input_paths[technology]%(region.lower()),
-                            index=False, header=False, sep='\t')
-            except KeyError:
-                print('No %s for %s'%(technology, region))
+        try:   
+            data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
+            data_to_antares_input.to_csv(antares_input_paths[data]%(region.lower()),
+                        index=False, header=False, sep='\t')
+        except KeyError:
+            print('No %s for %s'%(data, region))
     
     
 @CLI.command()
 @click.pass_context    
 def generate_balmorel_vre(ctx):
+    """Generate Balmorel input data for VRE (except hydro)"""
     pass
 
 
 ### ------------------------------- ###
-###             5. Hydro            ###
+###            Hydropower           ###
 ### ------------------------------- ###
 @CLI.command()
 @click.pass_context
 def generate_balmorel_hydro(ctx, weather_year: int = 2000):
-    """generate Balmorel input data for hydropower"""
+    """Generate Balmorel input data for hydropower"""
 
     # Read parameters
     ## E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
@@ -995,7 +1062,7 @@ def old_preprocessing(ctx):
         incfiles[key].save()
 
     #%% ------------------------------- ###
-    ###         7. Transmission         ###
+    ###           Transmission          ###
     ### ------------------------------- ###
 
     # This analysis requires geopandas
@@ -1061,61 +1128,6 @@ def old_preprocessing(ctx):
         # Get distance matrix
         D = distance_matrix(x=balmmap.geometry.centroid.x,
                             y=balmmap.geometry.centroid.y)
-
-# Utilities
-def ReadIncFilePrefix(name: str, 
-                      incfile_prefix_path: str, 
-                      weather_year: int):
-    """Reads an .inc file that should just contain the prefix of the incfile
-
-    Args:
-        name (str): Name of the incfile
-        incfile_prefix_path (str): Path to where the related prefix .inc file is
-        weather_year (int): The weather year, which is relevant for the description of some .inc files.
-
-    Returns:
-        _type_: _description_
-    """
-    if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)) | ('WTR' in name):
-        string = "* Weather year %d from Antares\n"%(weather_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
-    else:
-        string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
-    
-    return string
-
-def create_incfiles(names: list, 
-                    weather_year: int,
-                    bodies: dict = None, 
-                    suffixes: dict = None,
-                    incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
-    """A convenient way to create many incfiles and fill in predefined prefixes, bodies and suffixes
-
-    Args:
-        names (list): Names of the incfiles created (without .inc)
-        weather_year (int): The weather year for weather dependent parameters.
-        bodies (dict, optional): bodies of the incfiles. Defaults to None.
-        suffixes (dict, optional): suffixes of the incfiles. Defaults to None.
-        incfile_prefix_path (str, optional): path to the prefixes of the incfiles. Defaults to 'Pre-Processing/Data/IncFile Prefixes'.
-        
-    Returns:
-        incfiles (dict): Dictionary of incfiles
-    """
-    
-    incfiles = {
-        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, weather_year)) \
-            for incfile in names \
-                if os.path.exists(os.path.join(incfile))
-    }
-    
-    if bodies != None:
-        for incfile in bodies.keys():
-            incfiles[incfile].body = bodies[incfile]
-            
-    if suffixes != None:
-        for incfile in suffixes.keys():
-            incfiles[incfile].suffix = suffixes[incfile]
-
-    return incfiles
 
 ### Main
 if __name__ == '__main__':
