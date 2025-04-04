@@ -11,6 +11,8 @@ If you accidentally did this, you can fix it later by
 1. Changing the paths in `src/Jobs/set-R-path-for-pixi`
 2. Removing rpy2 by running `pixi remove rpy2`
 3. Install it again by running `pixi add rpy2==3.5.11` 
+
+Note that it might work if you already have a R4.2.3 installation in your PATH and R_HOME. In that case, remove the contents of the `set-R-path-for-pixi.*` files.
 :::
 
 ## Python Environment
