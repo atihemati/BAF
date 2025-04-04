@@ -25,7 +25,6 @@ src/Balmorel/base/data/
 **/*.xls*
 **/*.bak
 **/*.out
-**/*.bat
 **/*.gpr
 **/*.dat
 **/*.cmd
@@ -60,7 +59,6 @@ ui.ini
 Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-39.pyc
 
 
-.BAF-Env/*
 src/Workflow/Functions/__pycache__/Formatting.cpython-39.pyc
 src/Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-311.pyc
 SmallAnalyses.py

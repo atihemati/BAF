@@ -9,6 +9,12 @@ generate-mappings = "cd src && python Pre-Processing/preprocessing.py generate-m
 generate-antares-vre = { cmd = "cd src && pixi run python Pre-Processing/preprocessing.py generate-antares-vre", depends-on = ["generate-mappings"]}
 generate-balmorel-hydro = { cmd = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro", depends-on = ["generate-mappings"]}
 
+[target.win.activation]
+scripts = ["src/Jobs/set-R-path-for-pixi.bat"]
+
+[activation]
+scripts = ["src/Jobs/set-R-path-for-pixi.sh"]
+
 [dependencies]
 pandas = "==2.2.3"
 openpyxl = "==3.1.5"
@@ -19,9 +25,9 @@ numpy = "==2.2.3"
 matplotlib = "==3.10.0"
 python = "==3.12.9"
 requests = "==2.32.3"
-rpy2 = "==3.5.11"
 click = "==8.1.8"
 tsam = "==2.3.6"
+rpy2 = "==3.5.11"
 
 [pypi-dependencies]
 pybalmorel = "==0.5.3"
