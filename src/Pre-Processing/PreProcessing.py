@@ -109,8 +109,8 @@ def CLI(ctx, geo_scope: str, weather_year: int):
 ###            Utilities            ###
 ### ------------------------------- ###
 def ReadIncFilePrefix(name: str, 
-                      incfile_prefix_path: str, 
-                      weather_year: int):
+                      weather_year: int,
+                      incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
     """Reads an .inc file that should just contain the prefix of the incfile
 
     Args:
@@ -131,8 +131,7 @@ def ReadIncFilePrefix(name: str,
 def create_incfiles(names: list, 
                     weather_year: int,
                     bodies: dict = None, 
-                    suffixes: dict = None,
-                    incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
+                    suffixes: dict = None):
     """A convenient way to create many incfiles and fill in predefined prefixes, bodies and suffixes
 
     Args:
@@ -147,9 +146,8 @@ def create_incfiles(names: list,
     """
     
     incfiles = {
-        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, incfile_prefix_path, weather_year)) \
-            for incfile in names \
-                if os.path.exists(os.path.join(incfile))
+        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, weather_year)) \
+            for incfile in names
     }
     
     if bodies != None:
@@ -367,14 +365,42 @@ def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_pa
 def generate_balmorel_vre(ctx, data: str, stoch_year_data: dict):
     """Generate Balmorel input data for VRE (except hydro)"""
     
+    # Format data to Balmorel input
+    balmorel_names = {
+        'offshore_wind' : {'incfile' : 'WND_VAR_T',
+                           'area_suffix' : '_OFF'}, 
+        'onshore_wind'  : {'incfile' : 'WND_VAR_T',
+                           'area_suffix' : '_A'},
+        'solar_pv'      : {'incfile' : 'SOLE_VAR_T',
+                           'area_suffix' : '_A'},
+        'load'          : {'incfile' : 'DE_VAR_T',
+                           'area_suffix' : ''}
+    }
+    year_data_column = list(stoch_year_data.keys())[0]
+    # stoch_year_data[]
+    
     # Create .inc files that Balmorel expects
-    for region in ctx.obj['geographical_scope']:
+    if data != 'load':
+        print(stoch_year_data[year_data_column])
         
-        try:   
-            data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
-            print(data_to_antares_input)
-        except KeyError:
-            print('No %s for %s'%(data, region))
+        f = IncFile(name=balmorel_names[data],
+                    prefix=ReadIncFilePrefix(balmorel_names[data]['incfile'], ctx.obj['weather_years'][0]))
+        
+        stoch_year_data[year_data_column].columns = pd.Series(stoch_year_data[year_data_column].columns) + balmorel_names[data]['area_suffix']
+        stoch_year_data[year_data_column].index = ctx.obj['ST']
+        
+        f.body = stoch_year_data[year_data_column]
+        
+        f.save()
+        
+            
+    # for region in ctx.obj['geographical_scope']:
+        
+    #     try:   
+    #         data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
+    #         print(data_to_antares_input)
+    #     except KeyError:
+    #         print('No %s for %s'%(data, region))
 
 
 ### ------------------------------- ###

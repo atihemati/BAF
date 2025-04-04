@@ -1,4 +1,4 @@
 { 
     "terminal.integrated.cwd": "src",
-    "terminal.integrated.defaultProfile.windows": "Debian (WSL)"
+    "terminal.integrated.defaultProfile.windows": "Command Prompt"
 }
