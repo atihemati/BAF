@@ -20,19 +20,16 @@ install.packages("antaresViz")
 ```
 
 ## Storing the Data
-All code is stored in git, but most of the input data is not tracked!
-Execute the following commands in powershell to zip data:
+The Antares and Balmorel *frameworks* are stored in git, as well as input data for Balmorel. However, input data for Antares is not tracked, and neither is important static files in the Pre-Processing folder. Download them [here](https://data.dtu.dk) and extract into the src folder. To store adjustments to these static files, execute the following commands in powershell to zip data:
 
 Windows:
-
 ```
-powershell Compress-Archive -Path "Balmorel/base/data, Antares/input, Pre-Processing/Data, Pre-Processing/Output" -DestinationPath "BAF-Data_branch_version.zip"
+powershell Compress-Archive -Path "Antares/input, Pre-Processing/Data, Pre-Processing/Output" -DestinationPath "BAF-Data_branch_version.zip"
 ```
 
 Linux:
-
 ```
-zip -r -q BAF-Data_branch_version.zip Pre-Processing/Output Pre-Processing/Data Antares/input Balmorel/base/data
+zip -r -q BAF-Data_branch_version.zip Pre-Processing/Output Pre-Processing/Data Antares/input
 ```
 
 ## Unzipping the Data on HPC
