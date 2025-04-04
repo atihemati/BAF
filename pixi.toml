@@ -6,8 +6,9 @@ version = "0.1.0"
 
 [tasks]
 generate-mappings = "cd src && python Pre-Processing/preprocessing.py generate-mappings"
-generate-antares-vre = { cmd = "cd src && pixi run python Pre-Processing/preprocessing.py generate-antares-vre", depends-on = ["generate-mappings"]}
-generate-balmorel-hydro = { cmd = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro", depends-on = ["generate-mappings"]}
+generate-antares-vre = "cd src && pixi run python Pre-Processing/preprocessing.py generate-antares-vre"
+generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preprocessing.py generate-balmorel-timeseries"
+generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 
 [dependencies]
 matplotlib = "==3.10.0"

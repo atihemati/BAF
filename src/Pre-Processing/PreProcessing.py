@@ -71,13 +71,13 @@ def CLI(ctx, geo_scope: str, weather_year: int):
     
     # Detect which command has been passed
     command = ctx.invoked_subcommand
-    if command in ['generate-antares-vre', 'generate-balmorel-hydro', 'generate-balmorel-vre']:
+    if command in ['generate-antares-vre', 'generate-balmorel-hydro', 'generate-balmorel-timeseries']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
         ctx.obj['ST'] = [S + ' . ' + T for S in ctx.obj['S'] for T in ctx.obj['T']]
         
-    if command in ['generate-antares-vre', 'generate-balmorel-vre']:
+    if command in ['generate-antares-vre', 'generate-balmorel-timeseries']:
         # Create data filepaths
         ctx.obj['data_filepaths'] = {
             'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
@@ -93,7 +93,7 @@ def CLI(ctx, geo_scope: str, weather_year: int):
             'load' : 'non_thermosensitive'
         }
 
-        if command == 'generate-balmorel-vre':
+        if command == 'generate-balmorel-timeseries':
             ctx.obj['weather_years'] = [weather_year]
         elif command == 'generate-antares-vre':
             ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
@@ -147,7 +147,7 @@ def create_incfiles(names: list,
     
     incfiles = {
         incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, weather_year)) \
-            for incfile in names
+        for incfile in names
     }
     
     if bodies != None:
@@ -344,7 +344,6 @@ def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_pa
         'offshore_wind' : 'Antares/input/renewables/series/%s/offshore/series.txt',
         'onshore_wind' : 'Antares/input/renewables/series/%s/onshore/series.txt',
         'solar_pv' : 'Antares/input/renewables/series/%s/photovoltaics/series.txt',
-        'load' : 'Antares/input/load/series/load_%s.txt',
     }):
     """Generate production factor timeseries for Antares VRE"""
     
@@ -362,45 +361,44 @@ def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_pa
 @CLI.command()
 @click.pass_context   
 @load_OSMOSE_data 
-def generate_balmorel_vre(ctx, data: str, stoch_year_data: dict):
-    """Generate Balmorel input data for VRE (except hydro)"""
+def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
+    """Generate Balmorel timeseries input data for VRE (except hydro) and exogenous electricity demand"""
     
     # Format data to Balmorel input
     balmorel_names = {
-        'offshore_wind' : {'incfile' : 'WND_VAR_T',
-                           'area_suffix' : '_OFF'}, 
+        'offshore_wind' : {'incfile' : 'WND_VAR_T_OFF',
+                           'area_suffix' : '_OFF',
+                           'incfile_suffix' : '\n;\nWND_VAR_T(AAA,SSS,TTT)=WND_VAR_T1(SSS,TTT,AAA);\nWND_VAR_T1(SSS,TTT,AAA)=0;'}, 
         'onshore_wind'  : {'incfile' : 'WND_VAR_T',
-                           'area_suffix' : '_A'},
+                           'area_suffix' : '_A',
+                           'incfile_suffix' : '''
+;
+$onmulti
+$if     EXIST '../data/WND_VAR_T_OFF.inc' $INCLUDE         '../data/WND_VAR_T_OFF.inc';
+$if not EXIST '../data/WND_VAR_T_OFF.inc' $INCLUDE '../../base/data/WND_VAR_T_OFF.inc';
+$offmulti
+                           '''},
         'solar_pv'      : {'incfile' : 'SOLE_VAR_T',
-                           'area_suffix' : '_A'},
+                           'area_suffix' : '_A',
+                           'incfile_suffix' : '\n;\nSOLE_VAR_T(AAA,SSS,TTT)=SOLE_VAR_T1(SSS,TTT,AAA);\nSOLE_VAR_T1(SSS,TTT,AAA)=0;'},
         'load'          : {'incfile' : 'DE_VAR_T',
-                           'area_suffix' : ''}
+                           'area_suffix' : '',
+                           'incfile_suffix' : '\n;\nDE_VAR_T(RRR,"RESE",SSS,TTT)=DE_VAR_T1(SSS,TTT,RRR);\nDE_VAR_T1(SSS,TTT,RRR)=0;'}
     }
-    year_data_column = list(stoch_year_data.keys())[0]
-    # stoch_year_data[]
     
-    # Create .inc files that Balmorel expects
-    if data != 'load':
-        print(stoch_year_data[year_data_column])
-        
-        f = IncFile(name=balmorel_names[data],
-                    prefix=ReadIncFilePrefix(balmorel_names[data]['incfile'], ctx.obj['weather_years'][0]))
-        
-        stoch_year_data[year_data_column].columns = pd.Series(stoch_year_data[year_data_column].columns) + balmorel_names[data]['area_suffix']
-        stoch_year_data[year_data_column].index = ctx.obj['ST']
-        
-        f.body = stoch_year_data[year_data_column]
-        
-        f.save()
-        
+    # Format data
+    year_data_column = list(stoch_year_data.keys())[0]
+    stoch_year_data[year_data_column] = stoch_year_data[year_data_column].loc[:8736, :]
+    stoch_year_data[year_data_column].index = ctx.obj['ST']  
+    stoch_year_data[year_data_column].columns = pd.Series(stoch_year_data[year_data_column].columns) + balmorel_names[data].get('area_suffix')
+    stoch_year_data[year_data_column].columns.name = ''
             
-    # for region in ctx.obj['geographical_scope']:
-        
-    #     try:   
-    #         data_to_antares_input = pd.DataFrame({year : stoch_year_data[year][region] for year in stoch_year_data.keys()})
-    #         print(data_to_antares_input)
-    #     except KeyError:
-    #         print('No %s for %s'%(data, region))
+    # Create .inc files for Balmorel
+    f = IncFile(name=balmorel_names[data].get('incfile'),
+                prefix=ReadIncFilePrefix(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0]))
+    f.body = stoch_year_data[year_data_column]
+    f.suffix = balmorel_names[data].get('incfile_suffix')    
+    f.save()
 
 
 ### ------------------------------- ###
