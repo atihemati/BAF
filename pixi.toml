@@ -11,7 +11,7 @@ generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preproc
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 
 [target.win.tasks]
-R = "C:/Users/mberos/AppData/Local/Programs/R/R-4.2.3/bin/x64/R"
+R = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
 
 [dependencies]
 snakemake-minimal = ">=9.1.7,<10"
