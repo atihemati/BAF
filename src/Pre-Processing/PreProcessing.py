@@ -69,48 +69,55 @@ def CLI(ctx, geo_scope: str, weather_year: int):
     ctx.ensure_object(dict)
     ctx.obj['geographical_scope'] = geo_scope.replace(' ', '').split(',')
     
-    # Detect which command has been passed
+    # Detect which command has been passedh
     command = ctx.invoked_subcommand
-    if command in ['generate-antares-vre', 'generate-balmorel-hydro', 'generate-balmorel-timeseries']:
+    
+    ## Define Balmorel time index
+    if command in ['generate-antares-vre', 'generate-balmorel-hydro', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
         # Create S and T timeseries
         ctx.obj['S'] = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
         ctx.obj['T'] = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
         ctx.obj['ST'] = [S + ' . ' + T for S in ctx.obj['S'] for T in ctx.obj['T']]
         
-    if command in ['generate-antares-vre', 'generate-balmorel-timeseries']:
+    ## Set paths for data
+    if command in ['generate-antares-vre', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
         # Create data filepaths
         ctx.obj['data_filepaths'] = {
             'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
             'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
             'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
-            'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv'
+            'heat'          : 'Pre-Processing/Data/heating_coeff/heating_coeff_%d.csv',
+            'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv',
         }
         
         ctx.obj['data_value_column'] = {
             'offshore_wind' : 'offshore_wind',
             'onshore_wind' : 'onshore_wind',
             'solar_pv' : 'pv',
-            'load' : 'non_thermosensitive'
+            'heat'    : 'heating_coeff',
+            'load' : 'non_thermosensitive',
         }
 
-        if command == 'generate-balmorel-timeseries':
-            ctx.obj['weather_years'] = [weather_year]
-        elif command == 'generate-antares-vre':
-            ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
-                                        1987, 1988, 1989, 1990, 1991, 
-                                        1992, 1993, 1994, 1995, 1996, 
-                                        1997, 1998, 1999, 2000, 2001, 
-                                        2002, 2003, 2004, 2005, 2006, 
-                                        2007, 2008, 2009, 2010, 2011, 
-                                        2012, 2013, 2014, 2015, 2016]
+    ## Set weather years
+    if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
+        ctx.obj['weather_years'] = [weather_year]
+    elif command == 'generate-antares-vre':
+        ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
+                                    1987, 1988, 1989, 1990, 1991, 
+                                    1992, 1993, 1994, 1995, 1996, 
+                                    1997, 1998, 1999, 2000, 2001, 
+                                    2002, 2003, 2004, 2005, 2006, 
+                                    2007, 2008, 2009, 2010, 2011, 
+                                    2012, 2013, 2014, 2015, 2016]
 
 
 ### ------------------------------- ###
 ###            Utilities            ###
 ### ------------------------------- ###
-def ReadIncFilePrefix(name: str, 
+def read_incfile_presuf(name: str, 
                       weather_year: int,
-                      incfile_prefix_path: str = 'Pre-Processing/Data/IncFile Prefixes'):
+                      incfile_prefix_path: str = 'Pre-Processing/Data/IncFile PreSuffixes',
+                      presuf: str = 'pre'):
     """Reads an .inc file that should just contain the prefix of the incfile
 
     Args:
@@ -121,10 +128,20 @@ def ReadIncFilePrefix(name: str,
     Returns:
         _type_: _description_
     """
+    # Add information about weather year if weather dependent parameter
     if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)) | ('WTR' in name):
         string = "* Weather year %d from Antares\n"%(weather_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
     else:
         string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+
+    # Get prefix or suffix
+    if presuf == 'pre':
+        string = string.split('*PRESUFSPLIT*')[0]
+    else:
+        try:
+            string = string.split('*PRESUFSPLIT*')[1]
+        except IndexError:
+            raise IndexError("%s didn't include a *PRESUFSPLIT* line, making it impossible to figure out what the suffix is!"%name)    
     
     return string
 
@@ -146,7 +163,7 @@ def create_incfiles(names: list,
     """
     
     incfiles = {
-        incfile : IncFile(name=incfile, prefix=ReadIncFilePrefix(incfile, weather_year)) \
+        incfile : IncFile(name=incfile, prefix=read_incfile_presuf(incfile, weather_year), suffix=read_incfile_presuf(incfile, weather_year, presuf='suf')) \
         for incfile in names
     }
     
@@ -154,10 +171,6 @@ def create_incfiles(names: list,
         for incfile in bodies.keys():
             incfiles[incfile].body = bodies[incfile]
             
-    if suffixes != None:
-        for incfile in suffixes.keys():
-            incfiles[incfile].suffix = suffixes[incfile]
-
     return incfiles
 
 
@@ -368,39 +381,57 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
     # Format data to Balmorel input
     balmorel_names = {
         'offshore_wind' : {'incfile' : 'WND_VAR_T_OFF',
-                           'area_suffix' : '_OFF',
-                           'incfile_suffix' : '\n;\nWND_VAR_T(AAA,SSS,TTT)=WND_VAR_T1(SSS,TTT,AAA);\nWND_VAR_T1(SSS,TTT,AAA)=0;'}, 
+                           'area_suffix' : '_OFF'}, 
         'onshore_wind'  : {'incfile' : 'WND_VAR_T',
-                           'area_suffix' : '_A',
-                           'incfile_suffix' : '''
-;
-$onmulti
-$if     EXIST '../data/WND_VAR_T_OFF.inc' $INCLUDE         '../data/WND_VAR_T_OFF.inc';
-$if not EXIST '../data/WND_VAR_T_OFF.inc' $INCLUDE '../../base/data/WND_VAR_T_OFF.inc';
-$offmulti
-                           '''},
+                           'area_suffix' : '_A'},
         'solar_pv'      : {'incfile' : 'SOLE_VAR_T',
-                           'area_suffix' : '_A',
-                           'incfile_suffix' : '\n;\nSOLE_VAR_T(AAA,SSS,TTT)=SOLE_VAR_T1(SSS,TTT,AAA);\nSOLE_VAR_T1(SSS,TTT,AAA)=0;'},
+                           'area_suffix' : '_A'},
         'load'          : {'incfile' : 'DE_VAR_T',
-                           'area_suffix' : '',
-                           'incfile_suffix' : '\n;\nDE_VAR_T(RRR,"RESE",SSS,TTT)=DE_VAR_T1(SSS,TTT,RRR);\nDE_VAR_T1(SSS,TTT,RRR)=0;'}
+                           'area_suffix' : ''}
     }
     
     # Format data
     year_data_column = list(stoch_year_data.keys())[0]
-    stoch_year_data[year_data_column] = stoch_year_data[year_data_column].loc[:8736, :]
-    stoch_year_data[year_data_column].index = ctx.obj['ST']  
-    stoch_year_data[year_data_column].columns = pd.Series(stoch_year_data[year_data_column].columns) + balmorel_names[data].get('area_suffix')
-    stoch_year_data[year_data_column].columns.name = ''
+    df = stoch_year_data[year_data_column]
+    df = df.loc[:8736, :] # Just leave out the last (two last) day(s)
+    df.index = ctx.obj['ST']  
+    df.columns = pd.Series(df.columns) + balmorel_names[data].get('area_suffix')
+    df.columns.name = ''
             
     # Create .inc files for Balmorel
     f = IncFile(name=balmorel_names[data].get('incfile'),
-                prefix=ReadIncFilePrefix(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0]))
-    f.body = stoch_year_data[year_data_column]
-    f.suffix = balmorel_names[data].get('incfile_suffix')    
+                prefix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0]),
+                suffix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0], presuf='suf'))
+    f.body = df
     f.save()
 
+@CLI.command()
+@click.pass_context
+@load_OSMOSE_data(files=['heat'])
+def generate_balmorel_heat_series(ctx, data: str, stoch_year_data: dict):
+    # Format data
+    year_data_column = list(stoch_year_data.keys())[0]
+    df = stoch_year_data[year_data_column]
+    df = df.loc[:8736, :] # Just leave out the last (two last) day(s)
+    df.index = ctx.obj['ST']  
+    df.columns.name = ''
+
+    # Individual heat 
+    df.columns = pd.Series(df.columns) + '_IDVU-SPACEHEAT'
+     
+    # Make constant, 20% heat for hot water assumption in district heat
+    df_dh = 0.2/8736 + df*0.8
+    
+    # District Heat
+    df_dh.columns = pd.Series(df_dh.columns).str.replace('_IDVU-SPACEHEAT', '_A')
+
+    incfiles = create_incfiles(names=['DH_VAR_T', 'INDIVUSERS_DH_VAR_T'],
+                               weather_year=ctx.obj['weather_years'][0],
+                               bodies={'DH_VAR_T' : df_dh,
+                                       'INDIVUSERS_DH_VAR_T' : df})
+
+    for incfile in incfiles:
+        incfile.save()
 
 ### ------------------------------- ###
 ###            Hydropower           ###
@@ -515,11 +546,7 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
                                        'WTRRRVAR_T' : hydro_WTRRRVAR_T.to_string(),
                                        'WTRRRFLH' : hydro_WTRRRFLH,
                                        'WTRRSFLH' : hydro_WTRRSFLH,
-                                       'HYRSMAXVOL_G' : hydro_HYRSMAXVOL_G},
-                               suffixes={'WTRRRVAR_T' : "\n;\nWTRRRVAR_T(AAA,SSS,TTT) = WTRRRVAR_T1(SSS,TTT,AAA);\nWTRRRVAR_T1(SSS,TTT,AAA) = 0;",
-                                         'WTRRSVAR_S' : "\n;\nWTRRSVAR_S(AAA,SSS) = WTRRSVAR_S1(SSS,AAA);\nWTRRSVAR_S1(SSS,AAA) = 0;",
-                                         'WTRRRFLH' : "/;",
-                                         'WTRRSFLH' : "/;"})
+                                       'HYRSMAXVOL_G' : hydro_HYRSMAXVOL_G})
     
     # Save
     for key in incfiles.keys():
