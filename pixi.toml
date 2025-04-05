@@ -14,6 +14,7 @@ preprocessing = "cd src && snakemake"
 
 [target.win.tasks]
 R = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
+zip-data = "cd src && Jobs/zip_data.bat"
 
 [dependencies]
 snakemake-minimal = ">=9.1.7,<10"
