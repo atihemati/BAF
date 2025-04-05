@@ -1,5 +1,5 @@
 [workspace]
-channels = ["conda-forge"]
+channels = ["conda-forge", "bioconda"]
 name = "BAF"
 platforms = ["linux-64", "win-64"]
 version = "0.1.0"
@@ -10,18 +10,22 @@ generate-antares-vre = "cd src && pixi run python Pre-Processing/preprocessing.p
 generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preprocessing.py generate-balmorel-timeseries"
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 
+[target.win.tasks]
+R = "C:/Users/mberos/AppData/Local/Programs/R/R-4.2.3/bin/x64/R"
+
 [dependencies]
-matplotlib = "==3.10.0"
-pandas = "==2.2.3"
-openpyxl = "==3.1.5"
-geopandas = "==1.0.1"
-scipy = "==1.15.2"
-plotly = "==6.0.0"
-click = "==8.1.8"
-numpy = "==2.2.3"
-python = "==3.12.9"
-tsam = "==2.3.6"
+snakemake-minimal = ">=9.1.7,<10"
+matplotlib = ">=3.10.0"
+pandas = ">=2.2.3"
+openpyxl = ">=3.1.5"
+geopandas = ">=1.0.1"
+scipy = ">=1.15.2"
+plotly = ">=6.0.0"
+click = ">=8.1.8"
+numpy = ">=2.2.3"
+python = ">=3.12.9"
+tsam = ">=2.3.6"
 
 [pypi-dependencies]
-pybalmorel = "==0.5.3"
 rpy2 = "==3.5.11"
+pybalmorel = ">=0.5.3, <0.6"

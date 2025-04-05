@@ -4,6 +4,8 @@ src/Antares/logs/
 src/Balmorel/base/auxils
 src/Pre-Processing/Data
 src/Pre-Processing/Representative periods/*.png
+src/.snakemake
+gurobi.log
 key
 Logs/
 
