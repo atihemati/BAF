@@ -161,34 +161,35 @@ def create_incfiles(names: list,
     return incfiles
 
 
-def load_OSMOSE_data(func):
+def load_OSMOSE_data(files: list):
     """Load data from OSMOSE and do something with func(*args, **kwargs)"""
-    
-    @wraps(func)
-    def wrapper(ctx, *args, **kwargs):
-        data_filepaths = ctx.obj['data_filepaths']
-        value_names = ctx.obj['data_value_column']
-        weather_years = ctx.obj['weather_years']
-        
-        for data in data_filepaths.keys():
+    def decorator(func):
+        @wraps(func)
+        def wrapper(ctx, *args, **kwargs):
+            data_filepaths = ctx.obj['data_filepaths']
+            value_names = ctx.obj['data_value_column']
+            weather_years = ctx.obj['weather_years']
             
-            # Load input data
-            stoch_year_data = {}
-            if data != 'load':
-                for year in weather_years:
-                    filename = data_filepaths[data]%year
-                    print('Reading %s'%filename)
-                    stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+            for data in files:
+                
+                # Load input data
+                stoch_year_data = {}
+                if data != 'load':
+                    for year in weather_years:
+                        filename = data_filepaths[data]%year
+                        print('Reading %s'%filename)
+                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                                columns='country', 
+                                                                                values=value_names[data])
+                else:
+                    stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
                                                                             columns='country', 
                                                                             values=value_names[data])
-            else:
-                stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
-                                                                        columns='country', 
-                                                                        values=value_names[data])
-            
-            func(ctx, data, stoch_year_data, *args, **kwargs)
-    
-    return wrapper
+                
+                func(ctx, data, stoch_year_data, *args, **kwargs)
+        
+        return wrapper
+    return decorator
 
 def append_neighbouring_years(filename: str, year: int, values: str,
                               index: str = 'timestamp', columns: str = 'country'):
@@ -339,7 +340,7 @@ def generate_mappings(ctx):
 
 @CLI.command()
 @click.pass_context
-@load_OSMOSE_data
+@load_OSMOSE_data(files=['offshore_wind', 'onshore_wind', 'solar_pv'])
 def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_paths = {
         'offshore_wind' : 'Antares/input/renewables/series/%s/offshore/series.txt',
         'onshore_wind' : 'Antares/input/renewables/series/%s/onshore/series.txt',
@@ -360,7 +361,7 @@ def generate_antares_vre(ctx, data: str, stoch_year_data: dict, antares_input_pa
     
 @CLI.command()
 @click.pass_context   
-@load_OSMOSE_data 
+@load_OSMOSE_data(files=['offshore_wind', 'onshore_wind', 'solar_pv', 'load']) 
 def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
     """Generate Balmorel timeseries input data for VRE (except hydro) and exogenous electricity demand"""
     
