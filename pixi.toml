@@ -10,7 +10,7 @@ generate-antares-vre = "cd src && pixi run python Pre-Processing/preprocessing.p
 generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preprocessing.py generate-balmorel-timeseries"
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 generate-balmorel-heat-series = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-heat-series"
-preprocessing = "cd src && snakemake"
+preprocessing = "cd src && snakemake -s Workflow/preprocessing.smk"
 
 [target.win.tasks]
 R = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
