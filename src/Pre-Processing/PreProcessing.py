@@ -411,7 +411,7 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
         f = IncFile(name=FLH_name,
                     prefix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0]),
                     suffix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0], presuf='suf'),
-                    body="\n".join(['%s%s . %0.2f'%(col, balmorel_names[data]['area_suffix'], FLH[col]) for col in FLH.index]))
+                    body="\n".join(['%s%s %0.2f'%(col, balmorel_names[data]['area_suffix'], FLH[col]) for col in FLH.index]))
         f.save()
 
 
