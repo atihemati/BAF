@@ -32,6 +32,9 @@ rule generate_balmorel_timeseries:
     input:
         [
             "Pre-Processing/Output/A2B_regi.pkl",
+            "Pre-Processing/Data/IncFile PreSuffixes/WNDFLH.inc",
+            "Pre-Processing/Data/IncFile PreSuffixes/WNDFLH_OFF.inc",
+            "Pre-Processing/Data/IncFile PreSuffixes/SOLEFLH.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/WND_VAR_T.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/WND_VAR_T_OFF.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/SOLE_VAR_T.inc",

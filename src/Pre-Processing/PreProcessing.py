@@ -129,8 +129,8 @@ def read_incfile_presuf(name: str,
         _type_: _description_
     """
     # Add information about weather year if weather dependent parameter
-    if ('WND' in name) | ('SOLE' in name) | ('DE' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)) | ('WTR' in name):
-        string = "* Weather year %d from Antares\n"%(weather_year+ 1) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
+    if ('WND' in name) | ('SOLE' in name) | ('WTR' in name) | ('DH' in name and not ('INDUSTRY' in name or 'HYDROGEN' in name)):
+        string = "* Weather year %d\n"%(weather_year) + ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
     else:
         string = ''.join(open(incfile_prefix_path + '/%s.inc'%name).readlines())
 
@@ -393,6 +393,7 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
     # Format data
     year_data_column = list(stoch_year_data.keys())[0]
     df = stoch_year_data[year_data_column]
+    FLH = df.sum()
     df = df.loc[:8736, :] # Just leave out the last (two last) day(s)
     df.index = ctx.obj['ST']  
     df.columns = pd.Series(df.columns) + balmorel_names[data].get('area_suffix')
@@ -404,6 +405,15 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
                 suffix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0], presuf='suf'))
     f.body = df
     f.save()
+
+    if data != 'load':
+        FLH_name = balmorel_names[data].get('incfile').replace('_VAR_T', 'FLH')
+        f = IncFile(name=FLH_name,
+                    prefix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0]),
+                    suffix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0], presuf='suf'),
+                    body="\n".join(['%s%s . %0.2f'%(col, balmorel_names[data]['area_suffix'], FLH[col]) for col in FLH.index]))
+        f.save()
+
 
 @CLI.command()
 @click.pass_context
