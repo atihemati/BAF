@@ -4,7 +4,8 @@ rule all:
         [
             "Antares/input/renewables/series/ch/onshore/series.txt",
             "Balmorel/base/data/WND_VAR_T.inc",
-            "Balmorel/base/data/WTRRRVAR_T.inc"
+            "Balmorel/base/data/WTRRRVAR_T.inc",
+            "Balmorel/base/data/DH_VAR_T.inc"
         ]
 
 
@@ -31,7 +32,6 @@ rule generate_antares_vre:
 rule generate_balmorel_timeseries:
     input:
         [
-            "Pre-Processing/Output/A2B_regi.pkl",
             "Pre-Processing/Data/IncFile PreSuffixes/WNDFLH.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/WNDFLH_OFF.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/SOLEFLH.inc",
@@ -49,7 +49,6 @@ rule generate_balmorel_timeseries:
 rule generate_balmorel_hydro:
     input:
         [
-            "Pre-Processing/Output/A2B_regi.pkl",
             "Pre-Processing/Data/IncFile PreSuffixes/WTRRRFLH.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/WTRRSFLH.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/WTRRRVAR_T.inc",
@@ -60,3 +59,15 @@ rule generate_balmorel_hydro:
         "Balmorel/base/data/WTRRRVAR_T.inc"
     shell:
         "pixi run generate-balmorel-hydro"
+
+# Rule for generating Balmorel timeseries for heat
+rule generate_balmorel_heat_series:
+    input:
+        [
+            "Pre-Processing/Data/IncFile PreSuffixes/DH_VAR_T.inc",
+            "Pre-Processing/Data/IncFile PreSuffixes/INDIVUSERS_DH_VAR_T.inc",
+        ]
+    output:
+        "Balmorel/base/data/DH_VAR_T.inc"
+    shell:
+        "pixi run generate-balmorel-heat-series"

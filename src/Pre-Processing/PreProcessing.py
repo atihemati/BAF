@@ -551,7 +551,7 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
             #'GNR_ES_WTR_PMP' changed to 75% efficiency in GKFX incfile prefix
 
     # Create 
-    incfiles = create_incfiles(['WTRRSVAR_S', 'WTRRSFLH', 'WTRRRVAR_T', 'WTRRRFLH', 'HYRSMAXVOL_G'], weather_year,
+    incfiles = create_incfiles(['WTRRSVAR_S', 'WTRRSFLH', 'WTRRRVAR_T', 'WTRRRFLH', 'HYRSMAXVOL_G'], weather_year+1982,
                                bodies={'WTRRSVAR_S' : hydro_WTRRSVAR_S.to_string(),
                                        'WTRRRVAR_T' : hydro_WTRRRVAR_T.to_string(),
                                        'WTRRRFLH' : hydro_WTRRRFLH,
