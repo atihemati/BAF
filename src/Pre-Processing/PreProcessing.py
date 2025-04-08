@@ -440,7 +440,7 @@ def generate_balmorel_heat_series(ctx, data: str, stoch_year_data: dict):
                                bodies={'DH_VAR_T' : df_dh,
                                        'INDIVUSERS_DH_VAR_T' : df})
 
-    for incfile in incfiles:
+    for incfile in incfiles.values():
         incfile.save()
 
 ### ------------------------------- ###
