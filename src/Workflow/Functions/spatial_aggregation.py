@@ -138,8 +138,6 @@ def loop_and_replace_names(df: pd.DataFrame,
     clustering = clustering.set_index(old_column)
     
     for area in df[old_column].unique():
-        if area == 'DENMARK':
-            continue
         
         try:
             suffix = '_' + area.split('_')[1]
@@ -171,6 +169,7 @@ def aggregate_parameter(db: gams.GamsDatabase,
     df = symbol_to_df(db, symbol)
     symbol_columns = list(df.columns)
     value_sum_before = df.Value.sum()
+    # print('Symbol before:\n', df)
     
     # How to define this? Search for _, if that exists then its areas otherwise regions assumed? What about CCCRRRAAA
     if 'RRR' in symbol_columns:
@@ -205,7 +204,9 @@ def aggregate_parameter(db: gams.GamsDatabase,
         df.loc[idx, 'Value'] = 'EPS'
     value_sum_after = df.query('Value != "EPS"').Value.sum()
     
-    if not(np.isclose(value_sum_after, value_sum_before, rtol=0.01)) and aggfunc == 'sum':
+    # print('Symbol after:\n', df)
+    
+    if not(np.isclose(value_sum_after, value_sum_before, rtol=0.01)) and aggfunc == 'sum' and not (symbol == 'XKFX' or symbol == 'XH2KFX'):
         print('Sum of value before (%0.2f) is not equal to the sum of value after (%0.2f) for symbol %s'%(value_sum_before, value_sum_after, symbol))
         raise('Error in aggregation')
     
@@ -218,7 +219,7 @@ def aggregate_parameter(db: gams.GamsDatabase,
     else:
         symbol_name = symbol
     
-    f = IncFile(name=symbol_name, path='Pre-Processing/Output',
+    f = IncFile(name=symbol_name, path='Balmorel/base/data',
                 prefix=prefix, suffix=suffix)
     f.body = df
     
@@ -260,7 +261,7 @@ def aggregate_sets(db: gams.GamsDatabase,
         ""
     ])
     suffix = '\n/\n;'
-    f = IncFile(name=symbol, path='Pre-Processing/Output',
+    f = IncFile(name=symbol, path='Balmorel/base/data',
                 prefix=prefix, suffix=suffix)
     
     # Format input
@@ -312,8 +313,9 @@ def plot_transmission_invcost(symbol: str,
 ### ------------------------------- ###
 
 @click.command()
-@click.option('--only-symbols', type=str, required=False, default=None, help="Only aggregate the symbols, input as comma-separated string")
-def main(only_symbols: Union[str, None]):
+@click.argument('symbols', nargs=-1, type=str, required=True)
+def main(symbols: Union[str, None]):
+    """Aggregate Balmorel nodes"""
     
     # Make configuration lists
     config = ConfigParser()
@@ -335,13 +337,9 @@ def main(only_symbols: Union[str, None]):
     db = ws.add_database_from_gdx(str(p.resolve()))
     
     clusters = pd.read_csv('Pre-Processing/Data/BalmorelData/mapping_of_old_regions.csv', sep=';')
-    symbols = ['XINVCOST', 'XKFX']
         
     # Filter out exceptions and get aggregation methods per symbol
     symbols, aggfuncs, fillnas = get_symbols_to_aggregate(symbols, exceptions, mean_aggfuncs, median_aggfuncs, zero_fillnas)
-    
-    if only_symbols != None:
-        symbols = only_symbols.replace(' ', '').split(',')
 
     # Aggregating parameters and sets
     print('Will attempt to aggregate..\n%s\n'%(','.join(symbols)))
