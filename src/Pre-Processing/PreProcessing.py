@@ -269,18 +269,12 @@ def generate_mappings(ctx):
     """Generates spatial and technological mappings between Balmorel and Antares"""
     
     ### 1.1 Regions for A2B2A Mapping
-    # Regions for VRE Mapping
-    B2A_regi = {
-                'CH':['CH'],
-                'DE':['DE'],
-                'FR':['FR']
-                }
+    geographical_scope = ctx.obj['geographical_scope']
+    
+    # Regions for VRE Mapping (currently uniform mapping)
+    B2A_regi = {region : [region] for region in geographical_scope}
 
-    A2B_regi = {
-                'CH':['CH'],
-                'DE':['DE'],
-                'FR':['FR']
-                }
+    A2B_regi = {region : [region] for region in geographical_scope}
 
 
     ## Save defined regions
@@ -460,9 +454,6 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
     T = ctx.obj['T']
     ST = ctx.obj['ST']
 
-    ## The mapping
-    A2B_regi = pickle.load(open('Pre-Processing/Output/A2B_regi.pkl', 'rb'))
-
     # Prepare placeholders
     hydro_res = configparser.ConfigParser()
     hydro_res.read('Antares/input/hydro/hydro.ini')
@@ -477,7 +468,7 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
     hydro_WTRRRVAR_T = pd.DataFrame(index=ST)
     hydro_HYRSMAXVOL_G = '\n'
 
-    for area in A2B_regi.keys():
+    for area in ctx.obj['geographical_scope']:
         print('Generating hydro data for %s'%area)
         ### Reservoir power capacity and pumping eff in the area itself
         try:

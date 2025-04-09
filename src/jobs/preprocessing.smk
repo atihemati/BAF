@@ -1,4 +1,14 @@
-# Define the final outputs that we want to generate
+# Get configurations
+from configparser import ConfigParser
+
+config = ConfigParser()
+config.read('Config.ini')
+geographical_scope = config.get('PreProcessing', 'geographical_scope') 
+
+# Command templates (include space in the end for extra arguments)
+preprocessing_cli_cmd = "python Pre-Processing/preprocessing.py "
+
+# Representative final outputs for preprocessing 
 rule all:
     input:
         [
@@ -16,8 +26,10 @@ rule generate_mappings:
             "Pre-Processing/Output/B2A_regi.pkl",
             "Pre-Processing/Output/A2B_regi.pkl"
         ]
+    params:
+        geo_scope = geographical_scope
     shell:
-        "pixi run generate-mappings"
+        preprocessing_cli_cmd + "--geo-scope={params.geo_scope} generate-mappings"
 
 # Rule for generating VRE profiles for Antares
 rule generate_antares_vre:
@@ -26,7 +38,7 @@ rule generate_antares_vre:
     output:
         "Antares/input/renewables/series/ch/onshore/series.txt"
     shell:
-        "pixi run generate-antares-vre"
+        preprocessing_cli_cmd + "generate-antares-vre"
 
 # Rule for generating Balmorel timeseries (VRE and exogenous electricity)
 rule generate_balmorel_timeseries:
@@ -43,7 +55,7 @@ rule generate_balmorel_timeseries:
     output:
         "Balmorel/base/data/WND_VAR_T.inc"
     shell:
-        "pixi run generate-balmorel-timeseries"
+        preprocessing_cli_cmd + "generate-balmorel-timeseries"
 
 # Rule for generating Balmorel timeseries for hydropower
 rule generate_balmorel_hydro:
@@ -55,10 +67,12 @@ rule generate_balmorel_hydro:
             "Pre-Processing/Data/IncFile PreSuffixes/WTRRSVAR_S.inc",
             "Pre-Processing/Data/IncFile PreSuffixes/HYRSMAXVOL_G.inc",
         ]
+    params:
+        geo_scope=geographical_scope
     output:
         "Balmorel/base/data/WTRRRVAR_T.inc"
     shell:
-        "pixi run generate-balmorel-hydro"
+        preprocessing_cli_cmd + "--geo-scope={params.geo_scope} generate-balmorel-hydro"
 
 # Rule for generating Balmorel timeseries for heat
 rule generate_balmorel_heat_series:
@@ -70,4 +84,4 @@ rule generate_balmorel_heat_series:
     output:
         "Balmorel/base/data/DH_VAR_T.inc"
     shell:
-        "pixi run generate-balmorel-heat-series"
+        preprocessing_cli_cmd + "generate-balmorel-heat-series"
