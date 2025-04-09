@@ -11,6 +11,7 @@ generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preproc
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 generate-balmorel-heat-series = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-heat-series"
 preprocessing = "cd src && snakemake -s Jobs/preprocessing.smk"
+space-aggregate-balmorel = "cd src && python Pre-Processing/spatial_aggregation.py"
 
 [target.win.tasks]
 r = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
