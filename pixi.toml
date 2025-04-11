@@ -12,6 +12,7 @@ generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py gene
 generate-balmorel-heat-series = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-heat-series"
 preprocessing = "cd src && snakemake -s Jobs/preprocessing.smk"
 space-aggregate-balmorel = "cd src && python Pre-Processing/spatial_aggregation.py"
+analyse = "cd src/Balmorel && python Analysis/analyse.py "
 
 [target.win.tasks]
 r = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
@@ -34,3 +35,8 @@ tsam = ">=2.3.6"
 [pypi-dependencies]
 rpy2 = "==3.5.11"
 pybalmorel = ">=0.5.3, <0.6"
+ipython = ">=9.1.0, <10"
+ptyprocess = ">=0.7.0, <0.8"
+ipykernel = ">=6.29.5, <7"
+pyzmq = ">=26.4.0, <27"
+premailer = ">=3.10.0, <4"
