@@ -137,7 +137,7 @@ def loop_and_replace_names(df: pd.DataFrame,
     clustering.columns = [old_column, new_column] # old_column: name to be replaced by cluster name, new_column: cluster name
     clustering = clustering.set_index(old_column)
     
-    for area in df[old_column].unique():
+    for area in [area for area in df[old_column].unique() if area not in ['NORWAY','DENMARK','FINLAND','GERMANY','NETHERLANDS','SWEDEN','UNITED_KINGDOM','ESTONIA','LATVIA','LITHUANIA','POLAND','BELGIUM','FRANCE','ITALY','SWITZERLAND','AUSTRIA','CZECH_REPUBLIC','SPAIN','PORTUGAL','SLOVAKIA','HUNGARY','SLOVENIA','CROATIA','ROMANIA','BULGARIA','GREECE','IRELAND','LUXEMBOURG','ALBANIA','MONTENEGRO','NORTH_MACEDONIA','BOSNIA_AND_HERZEGOVINA','SERBIA','TURKEY','MALTA','CYPRUS']]:
         
         try:
             suffix = '_' + area.split('_')[1]
