@@ -4,6 +4,8 @@ src/Antares/logs/
 src/Balmorel/base/auxils
 src/Pre-Processing/Data
 src/Pre-Processing/Representative periods/*.png
+src/.snakemake
+gurobi.log
 key
 Logs/
 
@@ -25,7 +27,6 @@ src/Balmorel/base/data/
 **/*.xls*
 **/*.bak
 **/*.out
-**/*.bat
 **/*.gpr
 **/*.dat
 **/*.cmd
@@ -60,7 +61,6 @@ ui.ini
 Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-39.pyc
 
 
-.BAF-Env/*
 src/Workflow/Functions/__pycache__/Formatting.cpython-39.pyc
 src/Workflow/Functions/__pycache__/GeneralHelperFunctions.cpython-311.pyc
 SmallAnalyses.py
@@ -71,3 +71,6 @@ Antares/BAF Data eur-system/*
 src/Workflow/__pycache__/*
 Balmorel/ik_model/data
 *.pyc
+# pixi environments
+.pixi
+*.egg-info

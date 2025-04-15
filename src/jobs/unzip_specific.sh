@@ -28,6 +28,9 @@
 #BSUB -e ./Logs/Unzip_%J.err
 # here follow the commands you want to execute with input.in as the input file
 
+# Actually, it could be more simple to unzip using * for finding any characters (regex pattern search)
+# By not using -j, you would preserve the folders structure inside a zip file. 
+
 unzip_to="../../Unzipped"
 
 for name in YYYYMMDD-HHMM_Scenario_Results; do

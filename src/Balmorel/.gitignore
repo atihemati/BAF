@@ -29,3 +29,11 @@ base/data/README.md
 *.log~3
 build
 %batfileMERGEWITHBASE%
+
+analysis/plots
+analysis/files
+analysis/config
+
+Balmorel_ReadData.gms
+Balmorelbb4_ReadData.inc
+GDATA.csv
