@@ -30,6 +30,7 @@ from pybalmorel.plotting import plot_bar_chart
 import pickle
 import os
 balmorel_colours['SYNFUELPRODUCER'] = '#E8C3A8'
+balmorel_colours['BIOGASUPGRADING'] = '#E8C3A8'
 
 @click.group()
 @click.option('--overwrite', is_flag=True, required=False, help='Overwrite previous collected results?')
