@@ -12,7 +12,7 @@ preprocessing_cli_cmd = "python Pre-Processing/preprocessing.py "
 rule all:
     input:
         [
-            "Antares/input/renewables/series/ch/onshore/series.txt",
+            "Antares/input/renewables/series/es/onshore/series.txt",
             "Balmorel/base/data/WND_VAR_T.inc",
             "Balmorel/base/data/WTRRRVAR_T.inc",
             "Balmorel/base/data/DH_VAR_T.inc"
@@ -29,14 +29,14 @@ rule generate_mappings:
     params:
         geo_scope = geographical_scope
     shell:
-        preprocessing_cli_cmd + "--geo-scope={params.geo_scope} generate-mappings"
+        preprocessing_cli_cmd + "generate-mappings"
 
 # Rule for generating VRE profiles for Antares
 rule generate_antares_vre:
     input:
         "Pre-Processing/Output/A2B_regi.pkl"
     output:
-        "Antares/input/renewables/series/ch/onshore/series.txt"
+        "Antares/input/renewables/series/es/onshore/series.txt"
     shell:
         preprocessing_cli_cmd + "generate-antares-vre"
 
@@ -72,7 +72,7 @@ rule generate_balmorel_hydro:
     output:
         "Balmorel/base/data/WTRRRVAR_T.inc"
     shell:
-        preprocessing_cli_cmd + "--geo-scope={params.geo_scope} generate-balmorel-hydro"
+        preprocessing_cli_cmd + "generate-balmorel-hydro"
 
 # Rule for generating Balmorel timeseries for heat
 rule generate_balmorel_heat_series:

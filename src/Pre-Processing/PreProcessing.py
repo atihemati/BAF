@@ -19,7 +19,6 @@ from Workflow.Functions.Formatting import newplot, nested_dict_to_df
 from pybalmorel import IncFile
 from functools import wraps
 import pickle
-from scipy.optimize import curve_fit
 from scipy.spatial import distance_matrix
 import configparser
 
@@ -38,10 +37,9 @@ except ModuleNotFoundError:
     balmmap = pd.DataFrame({'id' : 'a'},index=[0])
 
 @click.group()
-@click.option('--geo-scope', type=str, required=False, default="DE, CH, FR", help="The geographical scope of the models")
 @click.option('--weather-year', type=int, required=False, default=2000, help="The weather year for Balmorel timeseries input")
 @click.pass_context
-def CLI(ctx, geo_scope: str, weather_year: int):
+def CLI(ctx, weather_year: int):
     """The command line interface for pre-processing stuff"""
 
     ### 0.0 Load configuration file
@@ -67,7 +65,7 @@ def CLI(ctx, geo_scope: str, weather_year: int):
 
     # Set geographical scope
     ctx.ensure_object(dict)
-    ctx.obj['geographical_scope'] = geo_scope.replace(' ', '').split(',')
+    ctx.obj['geographical_scope'] = Config.get('PreProcessing', 'geographical_scope').replace(' ', '').split(',')
     
     # Detect which command has been passedh
     command = ctx.invoked_subcommand
