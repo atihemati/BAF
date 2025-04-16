@@ -5,6 +5,10 @@
 ## Python Environment
 Can be installed using [conda](https://www.anaconda.com/docs/getting-started/miniconda/install) or [pixi](https://pixi.sh/latest/). A pixi installation will ensure that *all* packages are the same as in the time of developing BAF, while a conda installation through the `environment.yaml` could lead to different sub-packages being installed.
 
+:::{warning}
+Remember to have R in your [PATH environment variable](https://superuser.com/questions/284342/what-are-path-and-other-environment-variables-and-how-can-i-set-or-use-them) before the environment installation below! At least if you wish to use the mentioned R functionalities.
+:::
+
 For pixi, simply [install pixi](https://pixi.sh/latest/#installation) and run `pixi install` in the top level of the folder. For conda, run `conda env create -f environment.yaml`.
 
 ## R Setup
