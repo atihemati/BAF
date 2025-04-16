@@ -616,7 +616,7 @@ def peri_process(sc_name: str):
             # Load Antares demand
             # ant_dem = pd.read_csv(wk_dir+ant_study + '/input/load/series/load_%s_normalised-data.txt'%(area), sep='\t', header=None)
             ant_dem = pd.read_table('Antares/input/load/series/load_{area}.txt'.format(area=area.lower()), header=None)
-            ant_dem = ant_dem / ant_dem.sum()
+            ant_dem = ant_dem / ant_dem.sum().max()
             
             # Plot demands
             # fig, ax = plt.subplots()
