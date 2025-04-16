@@ -40,3 +40,4 @@ ptyprocess = ">=0.7.0, <0.8"
 ipykernel = ">=6.29.5, <7"
 pyzmq = ">=26.4.0, <27"
 premailer = ">=3.10.0, <4"
+gamsapi = { version = "==47.1.0", extras = ["transfer"] }

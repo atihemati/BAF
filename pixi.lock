@@ -280,7 +280,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/6f/a3/5d31ea931bff935157de46fce73402e23ce94a043c9e75c679d47d14d314/eel-0.18.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/da/71/ae30dadffc90b9006d77af76b393cb9dfbfc9629f339fc1574a1c52e6806/future-1.0.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/4f/71/58f8be91ee25183262c178181b0902ec02e7b204e6eee24a674dc1c69e95/gamsapi-49.3.0-cp312-cp312-manylinux_2_17_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/c0/5d/01df74769291f267e3c67f1f030df85e4a4600388575e3c2ffe321ebc0fd/gamsapi-47.1.0-cp312-cp312-manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/ec/c9/f006c0cd59f0720fbb62ee11da0ad4c4c0fd12799afd957dd491137e80d9/gevent-24.11.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/7b/84/2dc373eb6493e00c884cc11e6c059ec97abae2678d42f06bf780570b0193/gevent_websocket-0.10.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f1/66/033e58a50fd9ec9df00a8671c74f1f3a320564c6415a4ed82a1c651654ba/greenlet-3.1.1-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
@@ -533,7 +533,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/6f/a3/5d31ea931bff935157de46fce73402e23ce94a043c9e75c679d47d14d314/eel-0.18.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/da/71/ae30dadffc90b9006d77af76b393cb9dfbfc9629f339fc1574a1c52e6806/future-1.0.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/1b/31/b19cb58c2fa0ac5fbe50d0499b9d3f27ddf46d2b78d83ad6f51706c1ed1f/gamsapi-49.3.0-cp312-cp312-win_amd64.whl
+      - pypi: https://files.pythonhosted.org/packages/86/68/cf52164155cb7f42b2b7af996e4471233ac2b4b07688b60ce56c27846921/gamsapi-47.1.0-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/11/b2/5d20664ef6a077bec9f27f7a7ee761edc64946d0b1e293726a3d074a9a18/gevent-24.11.1-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/7b/84/2dc373eb6493e00c884cc11e6c059ec97abae2678d42f06bf780570b0193/gevent_websocket-0.10.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/43/21/a5d9df1d21514883333fc86584c07c2b49ba7c602e670b174bd73cfc9c7f/greenlet-3.1.1-cp312-cp312-win_amd64.whl
@@ -1691,12 +1691,28 @@ packages:
   version: 1.0.0
   sha256: 929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216
   requires_python: '>=2.6,!=3.0.*,!=3.1.*,!=3.2.*'
-- pypi: https://files.pythonhosted.org/packages/1b/31/b19cb58c2fa0ac5fbe50d0499b9d3f27ddf46d2b78d83ad6f51706c1ed1f/gamsapi-49.3.0-cp312-cp312-win_amd64.whl
+- pypi: https://files.pythonhosted.org/packages/86/68/cf52164155cb7f42b2b7af996e4471233ac2b4b07688b60ce56c27846921/gamsapi-47.1.0-cp312-cp312-win_amd64.whl
   name: gamsapi
-  version: 49.3.0
-  sha256: cd9eb68daa5727bd79cdaaa58f2f777ecd8f2728115021106b0e8d3cdaef45b1
+  version: 47.1.0
+  sha256: 400ae7ecad3b16b627a33015dae8973c798fbef3222d20268383366f27d2c40f
   requires_dist:
-  - pandas>=2.0,<2.3 ; extra == 'connect'
+  - ply ; extra == 'all'
+  - pymysql ; extra == 'all'
+  - urllib3 ; extra == 'all'
+  - sqlalchemy ; extra == 'all'
+  - openpyxl>=3.1.0 ; extra == 'all'
+  - pyodbc ; extra == 'all'
+  - pymssql ; extra == 'all'
+  - pandas>=1.5,<2.3 ; extra == 'all'
+  - scipy ; extra == 'all'
+  - cerberus ; extra == 'all'
+  - python-dateutil ; extra == 'all'
+  - ipython ; extra == 'all'
+  - numpy>=1.26 ; extra == 'all'
+  - pyyaml ; extra == 'all'
+  - psycopg2-binary ; extra == 'all'
+  - pandas>=1.5,<2.3 ; extra == 'connect'
+  - numpy>=1.26 ; extra == 'connect'
   - pyyaml ; extra == 'connect'
   - openpyxl>=3.1.0 ; extra == 'connect'
   - sqlalchemy ; extra == 'connect'
@@ -1705,40 +1721,41 @@ packages:
   - psycopg2-binary ; extra == 'connect'
   - pymysql ; extra == 'connect'
   - pymssql ; extra == 'connect'
-  - certifi ; extra == 'control'
   - urllib3 ; extra == 'control'
   - ply ; extra == 'core'
-  - numpy ; extra == 'core'
   - python-dateutil ; extra == 'engine'
   - urllib3 ; extra == 'engine'
   - ipython ; extra == 'magic'
-  - pandas>=2.0,<2.3 ; extra == 'magic'
-  - pandas>=2.0,<2.3 ; extra == 'tools'
-  - pandas>=2.0,<2.3 ; extra == 'transfer'
+  - pandas>=1.5,<2.3 ; extra == 'magic'
+  - numpy>=1.26 ; extra == 'magic'
+  - pandas>=1.5,<2.3 ; extra == 'tools'
+  - numpy>=1.26 ; extra == 'tools'
+  - pandas>=1.5,<2.3 ; extra == 'transfer'
+  - numpy>=1.26 ; extra == 'transfer'
   - scipy ; extra == 'transfer'
-  - pyodbc ; extra == 'all'
-  - pandas>=2.0,<2.3 ; extra == 'all'
-  - pyyaml ; extra == 'all'
-  - pymysql ; extra == 'all'
-  - certifi ; extra == 'all'
-  - ply ; extra == 'all'
-  - python-dateutil ; extra == 'all'
-  - sqlalchemy ; extra == 'all'
-  - psycopg2-binary ; extra == 'all'
-  - scipy ; extra == 'all'
-  - pymssql ; extra == 'all'
-  - cerberus ; extra == 'all'
-  - numpy ; extra == 'all'
-  - urllib3 ; extra == 'all'
-  - openpyxl>=3.1.0 ; extra == 'all'
-  - ipython ; extra == 'all'
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/4f/71/58f8be91ee25183262c178181b0902ec02e7b204e6eee24a674dc1c69e95/gamsapi-49.3.0-cp312-cp312-manylinux_2_17_x86_64.whl
+  requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/c0/5d/01df74769291f267e3c67f1f030df85e4a4600388575e3c2ffe321ebc0fd/gamsapi-47.1.0-cp312-cp312-manylinux_2_17_x86_64.whl
   name: gamsapi
-  version: 49.3.0
-  sha256: efac267c27dec26756107501356b1ae4245e9d43c0f558c99ed236a281ff9a3f
+  version: 47.1.0
+  sha256: a7767879ca8853d479eb49c7453a18905f34fe1c618e9f4e77478cc9b9b15932
   requires_dist:
-  - pandas>=2.0,<2.3 ; extra == 'connect'
+  - numpy>=1.26 ; extra == 'all'
+  - openpyxl>=3.1.0 ; extra == 'all'
+  - sqlalchemy ; extra == 'all'
+  - pyodbc ; extra == 'all'
+  - ply ; extra == 'all'
+  - pandas>=1.5,<2.3 ; extra == 'all'
+  - python-dateutil ; extra == 'all'
+  - pymssql ; extra == 'all'
+  - pymysql ; extra == 'all'
+  - urllib3 ; extra == 'all'
+  - psycopg2-binary ; extra == 'all'
+  - cerberus ; extra == 'all'
+  - pyyaml ; extra == 'all'
+  - scipy ; extra == 'all'
+  - ipython ; extra == 'all'
+  - pandas>=1.5,<2.3 ; extra == 'connect'
+  - numpy>=1.26 ; extra == 'connect'
   - pyyaml ; extra == 'connect'
   - openpyxl>=3.1.0 ; extra == 'connect'
   - sqlalchemy ; extra == 'connect'
@@ -1747,34 +1764,19 @@ packages:
   - psycopg2-binary ; extra == 'connect'
   - pymysql ; extra == 'connect'
   - pymssql ; extra == 'connect'
-  - certifi ; extra == 'control'
   - urllib3 ; extra == 'control'
   - ply ; extra == 'core'
-  - numpy ; extra == 'core'
   - python-dateutil ; extra == 'engine'
   - urllib3 ; extra == 'engine'
   - ipython ; extra == 'magic'
-  - pandas>=2.0,<2.3 ; extra == 'magic'
-  - pandas>=2.0,<2.3 ; extra == 'tools'
-  - pandas>=2.0,<2.3 ; extra == 'transfer'
+  - pandas>=1.5,<2.3 ; extra == 'magic'
+  - numpy>=1.26 ; extra == 'magic'
+  - pandas>=1.5,<2.3 ; extra == 'tools'
+  - numpy>=1.26 ; extra == 'tools'
+  - pandas>=1.5,<2.3 ; extra == 'transfer'
+  - numpy>=1.26 ; extra == 'transfer'
   - scipy ; extra == 'transfer'
-  - python-dateutil ; extra == 'all'
-  - ply ; extra == 'all'
-  - pyyaml ; extra == 'all'
-  - sqlalchemy ; extra == 'all'
-  - pandas>=2.0,<2.3 ; extra == 'all'
-  - pymysql ; extra == 'all'
-  - cerberus ; extra == 'all'
-  - pymssql ; extra == 'all'
-  - numpy ; extra == 'all'
-  - scipy ; extra == 'all'
-  - psycopg2-binary ; extra == 'all'
-  - certifi ; extra == 'all'
-  - ipython ; extra == 'all'
-  - openpyxl>=3.1.0 ; extra == 'all'
-  - urllib3 ; extra == 'all'
-  - pyodbc ; extra == 'all'
-  requires_python: '>=3.9'
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/noarch/geopandas-1.0.1-pyhd8ed1ab_3.conda
   sha256: 04f7e616ebbf6352ff852b53c57901e43f14e2b3c92411f99b5547f106bc192e
   md5: 1baca589eb35814a392eaad6d152447e
