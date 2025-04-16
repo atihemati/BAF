@@ -455,7 +455,13 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
     # Prepare placeholders
     hydro_res = configparser.ConfigParser()
     hydro_res.read('Antares/input/hydro/hydro.ini')
-
+    GKFX_hydro_split_string_start = '* ---- START OF HYDRO HARMONISATION - DONT REMOVE OR MODIFY THIS LINE ----'
+    GKFX_hydro_split_string_end = '* ---- END OF HYDRO HARMONISATION - DONT REMOVE OR MODIFY THIS LINE ----'
+    with open('Balmorel/base/data/GKFX.inc', 'r') as f:
+        GKFX = f.read()
+        GKFX_start = GKFX.split(GKFX_hydro_split_string_start)[0] + GKFX_hydro_split_string_start + '\n'
+        GKFX_end = GKFX.split(GKFX_hydro_split_string_end)[1] + GKFX_hydro_split_string_end + '\n'
+        
     hydro_AAA = '\n'
     # GNR_RES_WTR_NOPMP (100 % efficiency)
     # GNR_RES_WTR_PMP_MC-01 (100 % efficiency)
@@ -551,14 +557,11 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
     for key in incfiles.keys():
         incfiles[key].save()
         
-    # Other incfiles that should change accordingly:    
-    # incfiles['CCCRRRAAA'].body = hydro_AAA
-    # incfiles['AAA'].body = hydro_AAA
-            
-    # Placeholders for 3 sections in ANTBALM_GKFX
-    # incfiles['GKFX'].body1 = hydro_GKFX
-    # incfiles['GKFX'].body2 = ''
-    # incfiles['GKFX'].body3 = ''
+    with open('Balmorel/base/data/GKFX.inc', 'w') as f:
+        f.write(GKFX_start)
+        f.write(hydro_GKFX)
+        f.write(GKFX_end)
+
 
 
 @CLI.command()
