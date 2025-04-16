@@ -28,13 +28,12 @@ import matplotlib.pyplot as plt
 import subprocess
 from runpy import run_module
 import os
-if ('Workflow' in __file__) | ('Pre-Processing' in __file__):
-    os.chdir(os.path.dirname(os.path.dirname(__file__)))
 import sys
 import platform
 import configparser
 from Workflow.Functions.GeneralHelperFunctions import ErrorLog, log_process_time, check_antares_compilation
-       
+from Workflow.PeriProcessing import peri_process
+
 ### 0.0 Load configuration file
 Config = configparser.ConfigParser()
 Config.read('Config.ini')
@@ -109,11 +108,6 @@ else:
 StartIter = Config.getint('RunMetaData', 'StartIteration')
 i = StartIter
 
-# Make metadata
-Config.set('RunMetaData', 'CurrentIter', str(i))
-with open('Workflow/MetaResults/%s_meta.ini'%SC, 'w') as f:
-  Config.write(f)
-
 if test_mode or i == 0:
   t_start = time()
   out = run_module('Workflow.Initialisation', init_globals={'SC' : SC})
@@ -139,7 +133,7 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
     os.chdir(wk_dir + '/Balmorel/%s/model'%SC_folder)
     # On HPC
     if OS == 'Linux':
-      balm_cmd = ['gams', 'Balmorel.gms', '--scenario_name=%s_Iter%d'%(SC, i), '--threads=$LSB_DJOB_NUMPROC'] + BalmCmds # For HPC
+      balm_cmd = ['gams', 'Balmorel.gms', '--scenario_name=%s_Iter%d'%(SC, i), 'threads=$LSB_DJOB_NUMPROC'] + BalmCmds # For HPC
     # On Desktop
     else:
       balm_cmd = gams_path + '/gams "Balmorel.gms" --scenario_name=%s_Iter%d '%(SC, i) + ' '.join(BalmCmds)
@@ -163,16 +157,16 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
     if N_errors > 0:
       break
 
-  # Peri-Processing -> Antares executions to optimize all years
+  # PeriProcessing -> Antares executions to optimize all years
   for year in Y:
     
     # Only run reference year in Antares if first iteration
     if year == ref_year and i != 0:
       continue
     
-    ### 2.2 Run Peri-Processing
+    ### 2.2 Run PeriProcessing
     
-    # Check if another instance is running Peri-Processing or if Antares is still compiling 
+    # Check if another instance is running PeriProcessing or if Antares is still compiling 
     compile_finished, N_errors = check_antares_compilation(5*60, 5, N_errors)
     
     # Stop here, if there's an error
@@ -180,12 +174,12 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
       break
     
     t_start = time()
-    out = run_module('Workflow.Peri-Processing', init_globals={'year' : str(year),
+    out = run_module('Workflow.PeriProcessing', init_globals={'year' : str(year),
                                                                'SC_name' : SC})        
     sys.stdout.flush()
     t_stop = time()
     log_process_time('Workflow/OverallResults/%s_ProcessTime.csv'%SC, 
-                  i, 'Peri-Processing', t_stop - t_start)
+                  i, 'PeriProcessing', t_stop - t_start)
 
     ### 2.3 Run Antares
     ant_run_name = '%s_Iter%d_Y-%d'%(SC, i, year)

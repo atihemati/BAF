@@ -15,16 +15,16 @@ print('|--------------------------------------------------|\n')
 import pandas as pd
 import platform
 OS = platform.platform().split('-')[0]
-
 import os
-if ('Workflow' in __file__) | ('Pre-Processing' in __file__):
-    os.chdir(os.path.dirname(os.path.dirname(__file__)))
 import numpy as np
 import pickle
 import configparser
 import sys
-from Workflow.Functions.GeneralHelperFunctions import IncFile
+from pybalmorel import IncFile
 
+Config = configparser.ConfigParser()
+Config.read('Config.ini')
+        
 if not('SC' in locals()):
     try:
         # Try to read something from the command line
@@ -32,13 +32,14 @@ if not('SC' in locals()):
     except:
         # Otherwise, read config from top level
         print('Reading SC from Config.ini..')
-        Config = configparser.ConfigParser()
-        Config.read('Config.ini')
         SC = Config.get('RunMetaData', 'SC')
 
+# Make scenario specific config file
+Config.set('RunMetaData', 'CurrentIter', '0')
+with open('Workflow/MetaResults/%s_meta.ini'%SC, 'w') as f:
+  Config.write(f)
+  
 ### 0.0 Load configuration file
-Config = configparser.ConfigParser()
-Config.read('Workflow/MetaResults/%s_meta.ini'%SC)
 SC_folder = Config.get('RunMetaData', 'SC_Folder')
 ResetReserveMargin = Config.get('PostProcessing', 'ResetReserveMargin').lower() == 'true'
 
