@@ -11,6 +11,7 @@ generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preproc
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 generate-balmorel-heat-series = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-heat-series"
 preprocessing = "cd src && snakemake -s Jobs/preprocessing.smk"
+initialisation = "cd src && python Workflow/Initialisation.py" 
 space-aggregate-balmorel = "cd src && python Pre-Processing/spatial_aggregation.py"
 analyse = "cd src/Balmorel && python Analysis/analyse.py "
 

@@ -20,7 +20,7 @@ import numpy as np
 import pickle
 import configparser
 import sys
-from pybalmorel import IncFile
+from pybalmorel import IncFile, Balmorel
 
 Config = configparser.ConfigParser()
 Config.read('Config.ini')
@@ -252,6 +252,11 @@ f = IncFile(name='Y',
             suffix='\n/;',
             path=path)
 f.save()
+
+### 1.4 Load input data
+print('Loading input data of Balmorel/%s/model...'%SC_folder)
+m = Balmorel('Balmorel')
+m.load_incfiles(SC_folder, overwrite=True)
 
 print('\n|--------------------------------------------------|')   
 print('              END OF INITIALISATION')
