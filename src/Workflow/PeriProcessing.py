@@ -173,8 +173,8 @@ def peri_process(sc_name: str):
                 
                 # If Balmorel has higher spatial resolution...
                 if len(A2B_regi[region]) > 1:
-                    for BalmArea in A2B_regi[region]:
-                        tech_cap += cap.loc[idx & (cap.R == BalmArea), 'Value'].sum() * 1000
+                    for balmorel_region in A2B_regi[region]:
+                        tech_cap += cap.loc[idx & (cap.R == balmorel_region), 'Value'].sum() * 1000
                 # ...otherwise
                 else:                   
                     idx_cap = idx & (cap.R == region)
@@ -225,10 +225,10 @@ def peri_process(sc_name: str):
 
         ### 2.1 Go through regions
         thermal_config = configparser.ConfigParser()
-        for area in A2B_regi.keys():
+        for region in A2B_regi.keys():
             
             ### 2.2 Get tech capacities
-            thermal_config.read('Antares/input/thermal/clusters/%s/list.ini'%area.lower())
+            thermal_config.read('Antares/input/thermal/clusters/%s/list.ini'%region.lower())
             
             # Technologies as defined by aggregated tech categories in BalmTechs dict
             for tech in BalmTechs.keys():
@@ -245,21 +245,21 @@ def peri_process(sc_name: str):
                     Nreg = 0 # Amount of Balmorel regions with this technology
                     eff = 0 # Efficiency
                     capex = 0
-                    for BalmArea in A2B_regi[area]:
+                    for balmorel_region in A2B_regi[region]:
                         # Get weight from amount of corresponding areas in Balmorel
-                        # weight = B2A_DE_weights[BalmArea][area]
+                        # weight = B2A_DE_weights[balmorel_region][region]
                         weight = 1
                                     
                         # Index for capacities
-                        idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == BalmArea) & (cap.F == fuel) & (cap.Tech == tech.replace('-CCS', '')) & (cap.Y == year)    
+                        idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == fuel) & (cap.Tech == tech.replace('-CCS', '')) & (cap.Y == year)    
                         
                         # Index for marginal costs
                         idx = (eco['Var'] == 'COSTS') & ((eco['Subvar'] == 'GENERATION_OPERATIONAL_COSTS') |\
                             (eco['Subvar'] == 'GENERATION_FUEL_COSTS') | (eco['Subvar'] == 'GENERATION_CO2_TAX')) & (eco['Tech'] == tech.replace('-CCS', '')) & (eco['F'] == fuel) &\
-                                (eco['R'] == BalmArea) & (eco['Y'] == year)
+                                (eco['R'] == balmorel_region) & (eco['Y'] == year)
 
                         # Index for production
-                        idx2 = (pro['Commodity'] == 'ELECTRICITY') & (pro['R'] == BalmArea) & (pro['F'] == fuel) & (pro['Tech'] == tech.replace('-CCS', '')) & (pro['Y'] == year)
+                        idx2 = (pro['Commodity'] == 'ELECTRICITY') & (pro['R'] == balmorel_region) & (pro['F'] == fuel) & (pro['Tech'] == tech.replace('-CCS', '')) & (pro['Y'] == year)
                         
                         # Filtering CCS techs
                         if CCStech:
@@ -295,7 +295,7 @@ def peri_process(sc_name: str):
                             mc_cost = mc_cost / Nreg 
                             eff = eff / Nreg
                             em_factor = BalmTechs[tech][fuel]['CO2'] / eff
-                            print(area, tech, fuel, '\nMarginal cost: %0.2f eur/MWh'%mc_cost, '\nCapacity: %0.2f MW'%tech_cap, '\nEfficiency: %0.2f pct\n'%(eff*100))
+                            print(region, tech, fuel, '\nMarginal cost: %0.2f eur/MWh'%mc_cost, '\nCapacity: %0.2f MW'%tech_cap, '\nEfficiency: %0.2f pct\n'%(eff*100))
                         except ZeroDivisionError:
                             em_factor = 0
                             print('This capacity was not used')
@@ -305,7 +305,7 @@ def peri_process(sc_name: str):
                             mc_cost = 1
                     
                     else:
-                        # print(area, tech, fuel, '\nCapacity: %0.2f MW\n'%tech_cap)
+                        # print(region, tech, fuel, '\nCapacity: %0.2f MW\n'%tech_cap)
                         enabled = 'false'
                         em_factor = 0
                         
@@ -318,13 +318,13 @@ def peri_process(sc_name: str):
                     
                     # Create transmission capacity for hydrogen offtake, for fuel cell:
                     if (tech == 'FUELCELL') & (fuel == 'HYDROGEN'):
-                        if ('z_h2_c3_' + area.lower() in A2B_regi_h2.keys()):
+                        if ('z_h2_c3_' + region.lower() in A2B_regi_h2.keys()):
                                                             
                             # Capacity
-                            create_transmission_input(wk_dir, ant_study, 'z_h2_c3_' + area.lower(), 'z_taking', tech_cap*2, 0)
+                            create_transmission_input(wk_dir, ant_study, 'z_h2_c3_' + region.lower(), 'z_taking', tech_cap*2, 0)
                     
                             # Efficiency 
-                            generator = '{reg}%{virtual_node}'.format(reg='z_h2_c3_' + area.lower(), virtual_node='z_taking')
+                            generator = '{reg}%{virtual_node}'.format(reg='z_h2_c3_' + region.lower(), virtual_node='z_taking')
                             for section in bc_config.sections():
                                 if generator in bc_config.options(section):
                                     # print('%s is in section %s'%(generator, section))
@@ -340,34 +340,34 @@ def peri_process(sc_name: str):
                     temp = pd.Series(np.ones(8760) * tech_cap).astype(int)
                     if bool(enabled):
                         try:
-                            temp.to_csv(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s/series.txt'%(area.lower(), tech.lower(), fuel.lower()), sep='\t', header=False, index=False)
+                            temp.to_csv(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s/series.txt'%(region.lower(), tech.lower(), fuel.lower()), sep='\t', header=False, index=False)
                         
                         except OSError:
-                            os.mkdir(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s'%(area.lower(), tech.lower(), fuel.lower()))
-                            temp.to_csv(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s/series.txt'%(area.lower(), tech.lower(), fuel.lower()), sep='\t', header=False, index=False) 
+                            os.mkdir(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s'%(region.lower(), tech.lower(), fuel.lower()))
+                            temp.to_csv(wk_dir+'/Antares' + '/input/thermal/series/%s/%s_%s/series.txt'%(region.lower(), tech.lower(), fuel.lower()), sep='\t', header=False, index=False) 
                         
                         try:
-                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/modulation.txt'%(area.lower(), tech.lower(), fuel.lower()), 'w') as f:
+                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/modulation.txt'%(region.lower(), tech.lower(), fuel.lower()), 'w') as f:
                                 f.write(thermal_modulation)        
-                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/data.txt'%(area.lower(), tech.lower(), fuel.lower()), 'w') as f:
+                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/data.txt'%(region.lower(), tech.lower(), fuel.lower()), 'w') as f:
                                 f.write(thermal_data) 
                                 
                         except OSError:
-                            os.mkdir(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s'%(area.lower(), tech.lower(), fuel.lower()))
-                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/data.txt'%(area.lower(), tech.lower(), fuel.lower()), 'w') as f:
+                            os.mkdir(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s'%(region.lower(), tech.lower(), fuel.lower()))
+                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/data.txt'%(region.lower(), tech.lower(), fuel.lower()), 'w') as f:
                                 f.write(thermal_data) 
-                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/modulation.txt'%(area.lower(), tech.lower(), fuel.lower()), 'w') as f:
+                            with open(wk_dir+'/Antares' + '/input/thermal/prepro/%s/%s_%s/modulation.txt'%(region.lower(), tech.lower(), fuel.lower()), 'w') as f:
                                 f.write(thermal_modulation)
 
                     # Save technoeconomic data to file
-                    fAntTechno.loc[(i, year, area, tech.lower()+'_'+fuel.lower()), 'CAPEX'] = capex
-                    fAntTechno.loc[(i, year, area, tech.lower()+'_'+fuel.lower()), 'OPEX'] = mc_cost
-                    fAntTechno.loc[(i, year, area, tech.lower()+'_'+fuel.lower()), 'Power Capacity'] = tech_cap 
+                    fAntTechno.loc[(i, year, region, tech.lower()+'_'+fuel.lower()), 'CAPEX'] = capex
+                    fAntTechno.loc[(i, year, region, tech.lower()+'_'+fuel.lower()), 'OPEX'] = mc_cost
+                    fAntTechno.loc[(i, year, region, tech.lower()+'_'+fuel.lower()), 'Power Capacity'] = tech_cap 
                     
                     
             # Load constant PSP capacities and save in .ini
             
-            with open(wk_dir + ant_study + '/input/thermal/clusters/%s/list.ini'%(area.lower()), 'w') as f:
+            with open(wk_dir + ant_study + '/input/thermal/clusters/%s/list.ini'%(region.lower()), 'w') as f:
                 thermal_config.write(f)     
             thermal_config.clear()
             
@@ -378,16 +378,16 @@ def peri_process(sc_name: str):
             tech_cap = 0
             eff = 0
             N_reg = 0
-            for BalmArea in A2B_regi[area]:
-                # weight = B2A_DE_weights[BalmArea][area]
+            for balmorel_region in A2B_regi[region]:
+                # weight = B2A_DE_weights[balmorel_region][region]
                 weight = 1
-                tech_cap += weight * temp[temp.R == BalmArea].Value.sum()*1e3 # MW H2 out
-                if temp.loc[temp.R == BalmArea, 'Value'].sum()*1000 > 1e-6:   
-                    eff += get_efficiency(cap, idx_cap & (cap.R == BalmArea), GDATA)
+                tech_cap += weight * temp[temp.R == balmorel_region].Value.sum()*1e3 # MW H2 out
+                if temp.loc[temp.R == balmorel_region, 'Value'].sum()*1000 > 1e-6:   
+                    eff += get_efficiency(cap, idx_cap & (cap.R == balmorel_region), GDATA)
                     N_reg += 1
                         
             # Efficiency 
-            generator = '{reg}%{tech}'.format(reg=area.lower(), tech='x_c3')
+            generator = '{reg}%{tech}'.format(reg=region.lower(), tech='x_c3')
             for section in bc_config.sections():
                 if generator in bc_config.options(section):
                     # print('%s is in section %s'%(generator, section))
@@ -399,7 +399,7 @@ def peri_process(sc_name: str):
                         eff = eff / N_reg
                         tech_cap = tech_cap / eff
                         
-                        print(area, 'Electrolyser\nCapacity: %0.2f MW_EL'%tech_cap)
+                        print(region, 'Electrolyser\nCapacity: %0.2f MW_EL'%tech_cap)
                         print('Efficiency: %0.2f pct\n'%(eff*100))
                         
                         bc_config.set(section, 'enabled', 'true')
@@ -410,16 +410,16 @@ def peri_process(sc_name: str):
             
             # Save it
             try:
-                create_transmission_input(wk_dir, ant_study, area.lower(), 'x_c3', 
+                create_transmission_input(wk_dir, ant_study, region.lower(), 'x_c3', 
                                         [tech_cap, 0], 0) 
-                create_transmission_input(wk_dir, ant_study, 'x_c3', 'z_h2_c3_' + area.lower(), 
+                create_transmission_input(wk_dir, ant_study, 'x_c3', 'z_h2_c3_' + region.lower(), 
                                         [tech_cap*eff*1.01, 0], 0) # small overestimation of efficiency to take care of infeasibility due to rounding error (binding constraint should take care of correct flows however)
             except FileNotFoundError:
-                print('No electrolyser option for %s\n'%area)
+                print('No electrolyser option for %s\n'%region)
 
             # Save technoeconomic data to file
-            fAntTechno.loc[(i, year, area, 'electrolyser'), 'OPEX'] = mc_cost
-            fAntTechno.loc[(i, year, area, 'electrolyser'), 'Power Capacity'] = tech_cap 
+            fAntTechno.loc[(i, year, region, 'electrolyser'), 'OPEX'] = mc_cost
+            fAntTechno.loc[(i, year, region, 'electrolyser'), 'Power Capacity'] = tech_cap 
 
         # Save configfile
         with open('Antares/input/bindingconstraints/bindingconstraints.ini', 'w') as configfile:
@@ -445,38 +445,38 @@ def peri_process(sc_name: str):
 
 
         ### 3.2 Battery Storage
-        for area in A2B_regi.keys():
+        for region in A2B_regi.keys():
             
             
             energy_cap = 0
             power_cap = 0
             capex = 0
-            for BalmArea in A2B_regi[area]:
+            for balmorel_region in A2B_regi[region]:
                 ### Battery capacity
-                # energy_cap += sto.loc[(sto.R == BalmArea) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO-PEAK') != -1), 'Value'].sum() * 1e3 # MWh
-                idx_cap = (cap.R == BalmArea) & (cap.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (cap.G.str.find('BAT-LITHIO') != -1) & (cap.Y == year)
-                idx_sto = (sto.R == BalmArea) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO') != -1) & (sto.Y == year)
+                # energy_cap += sto.loc[(sto.R == balmorel_region) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO-PEAK') != -1), 'Value'].sum() * 1e3 # MWh
+                idx_cap = (cap.R == balmorel_region) & (cap.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (cap.G.str.find('BAT-LITHIO') != -1) & (cap.Y == year)
+                idx_sto = (sto.R == balmorel_region) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO') != -1) & (sto.Y == year)
                 power_cap += cap.loc[idx_cap, 'Value'].sum() * 1e3 # MW unloading capacity 
                 capex += get_capex(sto, idx_sto, GDATA, ANNUITYCG)
             
             if power_cap > 1e-6:
-                print('%s Li-Ion (Daily) Energy Capacity: <= %d MWh'%(area, power_cap*24))
+                print('%s Li-Ion (Daily) Energy Capacity: <= %d MWh'%(region, power_cap*24))
             # Check GDATA, charge and discharge power capacities are the same    
             # GDATA[(GDATA.G.str.find('BAT-LITHIO-PEAK') != -1) & ((GDATA.Par == 'GDSTOHUNLD') | (GDATA.Par == 'GDSTOHLOAD'))]
             
             ### Daily Energy Capacity
-            with open(wk_dir + ant_study + '/input/bindingconstraints/battery_energylimit_%s.txt'%area.lower(), 'w') as f:
+            with open(wk_dir + ant_study + '/input/bindingconstraints/battery_energylimit_%s.txt'%region.lower(), 'w') as f:
                 for k in range(366):
                     f.write(str(int(power_cap*24)) + '\t0\t0\n')
             
             ### 'Pumping' Capacity (Charge)
-            create_transmission_input(wk_dir, ant_study, '00_BAT_STO', area.lower(), [0, power_cap], 0)
+            create_transmission_input(wk_dir, ant_study, '00_BAT_STO', region.lower(), [0, power_cap], 0)
 
             # Save technoeconomic data to file
-            fAntTechno.loc[(i, year, area, 'battery'), 'OPEX'] = 0
-            fAntTechno.loc[(i, year, area, 'battery'), 'CAPEX'] = capex
-            fAntTechno.loc[(i, year, area, 'battery'), 'Energy Capacity'] = power_cap*24 
-            fAntTechno.loc[(i, year, area, 'battery'), 'Power Capacity'] = power_cap 
+            fAntTechno.loc[(i, year, region, 'battery'), 'OPEX'] = 0
+            fAntTechno.loc[(i, year, region, 'battery'), 'CAPEX'] = capex
+            fAntTechno.loc[(i, year, region, 'battery'), 'Energy Capacity'] = power_cap*24 
+            fAntTechno.loc[(i, year, region, 'battery'), 'Power Capacity'] = power_cap 
                 
 
         
@@ -572,55 +572,55 @@ def peri_process(sc_name: str):
     
 
         ### 5.2 Go through regions
-        for area in A2B_regi.keys():
+        for region in A2B_regi.keys():
             
             
             # Load Antares demand
-            # ant_dem = pd.read_csv(wk_dir+ant_study + '/input/load/series/load_%s_normalised-data.txt'%(area), sep='\t', header=None)
-            ant_dem = pd.read_table('Antares/input/load/series/load_{area}.txt'.format(area=area.lower()), header=None)
+            # ant_dem = pd.read_csv(wk_dir+ant_study + '/input/load/series/load_%s_normalised-data.txt'%(region), sep='\t', header=None)
+            ant_dem = pd.read_table('Antares/input/load/series/load_{region}.txt'.format(region=region.lower()), header=None)
             ant_dem = ant_dem / ant_dem.sum().max()
             
             # Plot demands
             # fig, ax = plt.subplots()
             # ant_dem.plot(ax=ax)
-            # ax.set_title(area + ' - Before Balm Demands')
+            # ax.set_title(region + ' - Before Balm Demands')
             # ax.legend(ncol=2, loc='center', bbox_to_anchor=(1.2, .5), title='Stochastic Year')
                 
             ann_dem = 0 # Annual demand in Antares node    
             flex_dem = 0 # Annual flexible demand
-            for BalmArea in A2B_regi[area]:
+            for balmorel_region in A2B_regi[region]:
 
                 # Get weight from amount of corresponding areas in Balmorel
-                # weight = B2A_DE_weights[BalmArea][area.lower()]
+                # weight = B2A_DE_weights[balmorel_region][region.lower()]
                 weight = 1
             
-                # Filter area and PtX, sum all demands
+                # Filter region and PtX, sum all demands
                 # NOTE: Divide this into industry, datacenter and residential+other profiles!
-                idx = (dem_iter0.Type == 'EXOGENOUS') & (dem_iter0.R == BalmArea) & (dem_iter0.Y == year) 
-                idx = (dem_iter0.R == BalmArea) & (dem_iter0.Y == year) 
-                print('Exogenous demand in %s, year %s'%(BalmArea, year), round(dem_iter0.loc[idx, 'Value'].sum()), 'TWh')
+                idx = (dem_iter0.Type == 'EXOGENOUS') & (dem_iter0.R == balmorel_region) & (dem_iter0.Y == year) 
+                idx = (dem_iter0.R == balmorel_region) & (dem_iter0.Y == year) # ALL electricity demand!
+                print('Exogenous demand in %s, year %s'%(balmorel_region, year), round(dem_iter0.loc[idx, 'Value'].sum()), 'TWh')
                 
                 # Increment demand and add distribution loss
-                ann_dem += weight * dem_iter0.loc[idx, 'Value'].sum() / (1 - DISLOSSEL.loc[BalmArea, 'Value']) 
+                ann_dem += weight * dem_iter0.loc[idx, 'Value'].sum() / (1 - DISLOSSEL.loc[balmorel_region, 'Value']) 
                 
-                print('Assigning to %s...'%(area))
+                print('Assigning to %s...'%(region))
                 
                 
-            print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(area, ann_dem))
+            print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(region, ann_dem))
 
             # Save
             # NOTE: Maybe do as noted above instead, so: ant_dem * (DE from rese + other) + DE_industry/8760 + DE_datacenter/8760
             ant_dem = np.round(ant_dem * ann_dem * 1e6).astype(int) # To timeseries
-            ant_dem.to_csv(wk_dir + ant_study + '/input/load/series/load_%s.txt'%(area.lower()), sep='\t', header=None, index=None)
+            ant_dem.to_csv(wk_dir + ant_study + '/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
 
             
             # Plot the new demands
             # fig, ax = plt.subplots()
             # ant_dem.plot(ax=ax)
-            # ax.set_title(area + ' - After Balm Demands')
+            # ax.set_title(region + ' - After Balm Demands')
             # ax.annotate('Total Dem: %d TWh'%(ant_dem.sum().mean()/1e6), xy=(.75, .75))
             # ax.legend(ncol=2, loc='center', bbox_to_anchor=(1.2, .5), title='Stochastic Year')
-            # fig.savefig('MetaResults/' + '_'.join((SC, 'AntExoElDem', area)) + '.png', bbox_inches='tight')
+            # fig.savefig('MetaResults/' + '_'.join((SC, 'AntExoElDem', region)) + '.png', bbox_inches='tight')
                 
         
         #%% ------------------------------- ###
@@ -641,18 +641,18 @@ def peri_process(sc_name: str):
         stochyears = [int(stochyear.split('\n')[0].replace(' ', '').replace('+=','')) for stochyear in Config.split('playlist_year')[1:]]
 
         Config = configparser.ConfigParser()
-        for area in A2B_regi.keys():
+        for region in A2B_regi.keys():
                 
-            Config.read('Antares/input/renewables/clusters/%s/list.ini'%area.lower())
+            Config.read('Antares/input/renewables/clusters/%s/list.ini'%region.lower())
 
-            load = pd.read_table('Antares/input/load/series/load_%s.txt'%(area.lower()), header=None) 
+            load = pd.read_table('Antares/input/load/series/load_%s.txt'%(region.lower()), header=None) 
             load = load.loc[:, stochyears].mean(axis=1)
 
             for VRE in B2A_ren.values():
                 
                 # Production series
                 try:
-                    f = pd.read_table('Antares/input/renewables/series/{area}/{VRE}/series.txt'.format(area=area.lower(), VRE=VRE), header=None)
+                    f = pd.read_table('Antares/input/renewables/series/{region}/{VRE}/series.txt'.format(region=region.lower(), VRE=VRE), header=None)
                 
                     # Get capacity input
                     vrecap = Config.getfloat(VRE, 'nominalcapacity')
@@ -663,7 +663,7 @@ def peri_process(sc_name: str):
                     
                 except EmptyDataError:
                     pass
-                    # print('No profile for %s in %s'%(VRE, area))
+                    # print('No profile for %s in %s'%(VRE, region))
 
 
             # Plot Residual LDC
@@ -686,18 +686,18 @@ def peri_process(sc_name: str):
             # Read the binding constraint
             Config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
 
-            R = A2B_regi[area][0] # Just any region - regions are all within a country
+            R = A2B_regi[region][0] # Just any region - regions are all within a country
             country = CCCRRR[CCCRRR.R.str.find(R) != -1].index[0] 
             
-            ### 6.2 Set Efficiency of Generators in Area, if it has a capacity
+            ### 6.2 Set Efficiency of Generators in region, if it has a capacity
             for fuel in fuels:
                 for tech in BalmTechs.keys():
                     
                     # Calculate average efficiency of all G types
                     N_reg = 0
                     eff = 0
-                    for BalmArea in A2B_regi[area]:
-                        idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == BalmArea) & (cap.F == fuel) & (cap.Tech == tech) & (cap.Y == year)
+                    for balmorel_region in A2B_regi[region]:
+                        idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == fuel) & (cap.Tech == tech) & (cap.Y == year)
                         if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
                             eff += get_efficiency(cap, idx_cap, GDATA)
                             N_reg += 1
@@ -705,7 +705,7 @@ def peri_process(sc_name: str):
                     if N_reg > 0:
                         eff = eff / N_reg
 
-                        generator = '{reg}.{tech}_{fuel}'.format(reg=area.lower(), tech=tech.lower(), fuel=fuel.lower())
+                        generator = '{reg}.{tech}_{fuel}'.format(reg=region.lower(), tech=tech.lower(), fuel=fuel.lower())
                         for section in Config.sections():
                             if generator in Config.options(section):
                                 # print('%s is in section %s'%(generator, section))
@@ -743,8 +743,8 @@ def peri_process(sc_name: str):
             ## Calculate average efficiency of all G types
             N_reg = 0
             eff = 0
-            for BalmArea in A2B_regi[area]:
-                idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == BalmArea) & (cap.F == 'MUNIWASTE') & (cap.Tech == tech) & (cap.Y == year)
+            for balmorel_region in A2B_regi[region]:
+                idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == 'MUNIWASTE') & (cap.Tech == tech) & (cap.Y == year)
                 if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
                     eff += get_efficiency(cap, idx_cap, GDATA)
                     N_reg += 1
@@ -752,7 +752,7 @@ def peri_process(sc_name: str):
             if N_reg > 0:
                 eff = eff / N_reg
 
-                generator = '{reg}.{tech}_muniwaste'.format(reg=area.lower(), tech=tech.lower())
+                generator = '{reg}.{tech}_muniwaste'.format(reg=region.lower(), tech=tech.lower())
                 for section in Config.sections():
                     if generator in Config.options(section):
                         # print('%s is in section %s'%(generator, section))
@@ -771,16 +771,16 @@ def peri_process(sc_name: str):
             
             # Aggregate, in case Balmorel is higher resolved
             weight = 0
-            for BalmArea in A2B_regi[area]:
-                idx2 = idx2 | (GMAXFS.CRA == BalmArea)
+            for balmorel_region in A2B_regi[region]:
+                idx2 = idx2 | (GMAXFS.CRA == balmorel_region)
                         
                 # Disaggregate, if Antares is higher resolved
-                # weight += B2A_DE_weights[BalmArea][area] / len(A2B_regi[area])
+                # weight += B2A_DE_weights[balmorel_region][region] / len(A2B_regi[region])
                 weight += 1
-            # print('%s weight: %0.2f'%(area, weight))
+            # print('%s weight: %0.2f'%(region, weight))
                 
             pot = GMAXFS.loc[idx & idx2].groupby(by=['S']).aggregate({'Value' : "sum"})
-            with open('Antares/input/bindingconstraints/muniwasteres_%s.txt'%(area.lower()), 'w') as f:
+            with open('Antares/input/bindingconstraints/muniwasteres_%s.txt'%(region.lower()), 'w') as f:
                 for week in pot.index:
                     pot0 = pot.loc[week, 'Value']/3.6 * weight # To MWh
                     for i in range(7):
