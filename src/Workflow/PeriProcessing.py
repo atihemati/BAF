@@ -639,8 +639,7 @@ def peri_process(sc_name: str):
                 
             Config.read('Antares/input/renewables/clusters/%s/list.ini'%region.lower())
 
-            load = pd.read_table('Antares/input/load/series/load_%s.txt'%(region.lower()), header=None) 
-            load = load.loc[:, stochyears].mean(axis=1)
+            load = pd.read_table('Antares/input/load/series/load_%s.txt'%(region.lower()), header=None).loc[:, 0]
 
             for VRE in B2A_ren.values():
                 
