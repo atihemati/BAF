@@ -1,3 +1,4 @@
+
 """
 General Helper Functions
 
@@ -160,6 +161,24 @@ def doLDC(array, n_bins, plot=False, fig = None, ax = None):
 #%% ------------------------------- ###
 ###        4. Antares Input         ###
 ### ------------------------------- ###
+
+def set_cluster_attribute(name: str, attribute: str, value: any, 
+                          node: str, cluster_type: str = 'thermal'):
+    """Set the attribute of a 
+
+    Args:
+        name (str): The name of the cluster element, i.e. the clusterfile section
+        attribute (str): The attribute of the cluster element to set, i.e. the clusterfile option
+        value (any): The value to set
+        node (str): The node containing the cluster
+        cluster_type (str, optional): The type of cluster, e.g. 'thermal', 'renewables'... Defaults to 'thermal'.
+    """
+    discharge_config = configparser.ConfigParser()
+    discharge_config.read('Antares/input/%s/clusters/%s/list.ini'%(cluster_type, node.lower()))
+    discharge_config.set(name, attribute, str(value))
+    with open('Antares/input/%s/clusters/%s/list.ini'%(cluster_type, node.lower()), 'w') as f:
+        discharge_config.write(f)
+    discharge_config.clear()
 
 def create_transmission_input(wk_dir, ant_study, area_from, area_to, trans_cap, hurdle_costs):
     try: 

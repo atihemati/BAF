@@ -29,7 +29,7 @@ import os
 import sys
 import pickle
 import configparser
-from Functions.GeneralHelperFunctions import symbol_to_df, create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex
+from Functions.GeneralHelperFunctions import symbol_to_df, create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
 
 
 @click.command()
@@ -453,7 +453,7 @@ def peri_process(sc_name: str):
             capex = 0
             for balmorel_region in A2B_regi[region]:
                 ### Battery capacity
-                # energy_cap += sto.loc[(sto.R == balmorel_region) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO-PEAK') != -1), 'Value'].sum() * 1e3 # MWh
+                energy_cap += sto.query("R == @balmorel_region and Tech == 'INTRASEASONAL-ELECT-STORAGE' and G.str.contains('BAT-LITHIO-PEAK')").loc[:, 'Value'].sum() * 1e3 # MWh
                 idx_cap = (cap.R == balmorel_region) & (cap.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (cap.G.str.find('BAT-LITHIO') != -1) & (cap.Y == year)
                 idx_sto = (sto.R == balmorel_region) & (sto.Tech == 'INTRASEASONAL-ELECT-STORAGE') & (sto.G.str.find('BAT-LITHIO') != -1) & (sto.Y == year)
                 power_cap += cap.loc[idx_cap, 'Value'].sum() * 1e3 # MW unloading capacity 
@@ -465,11 +465,19 @@ def peri_process(sc_name: str):
             # GDATA[(GDATA.G.str.find('BAT-LITHIO-PEAK') != -1) & ((GDATA.Par == 'GDSTOHUNLD') | (GDATA.Par == 'GDSTOHLOAD'))]
             
             ### Daily Energy Capacity
-            with open(wk_dir + ant_study + '/input/bindingconstraints/battery_energylimit_%s.txt'%region.lower(), 'w') as f:
-                for k in range(366):
-                    f.write(str(int(power_cap*24)) + '\t0\t0\n')
+            with open(wk_dir + ant_study + '/input/bindingconstraints/00_xtra_%s_bat_3_lt.txt'%region.lower(), 'w') as f:
+                for day in range(366):
+                    for hour in range(23): 
+                        f.write(str(int(energy_cap)) + '\n')
+                    f.write(str(int(energy_cap/2)) + '\n')
             
+            set_cluster_attribute('z_%s_bat_1'%region.lower(), 'nominalcapacity', energy_cap, '00_xtra')
+            set_cluster_attribute('z_%s_bat_2'%region.lower(), 'nominalcapacity', energy_cap, '00_xtra')
+
+                        
             ### 'Pumping' Capacity (Charge)
+            set_cluster_attribute('z_bat_gen', 'nominalcapacity', power_cap, region)
+            
             create_transmission_input(wk_dir, ant_study, '00_BAT_STO', region.lower(), [0, power_cap], 0)
 
             # Save technoeconomic data to file
