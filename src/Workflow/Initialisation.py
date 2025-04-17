@@ -254,9 +254,10 @@ f = IncFile(name='Y',
 f.save()
 
 ### 1.4 Load input data
-print('Loading input data of Balmorel/%s/model...'%SC_folder)
+print('\nLoading input data of Balmorel/%s/model...\n'%SC_folder)
 m = Balmorel('Balmorel')
 m.load_incfiles(SC_folder, overwrite=True)
+del m
 
 print('\n|--------------------------------------------------|')   
 print('              END OF INITIALISATION')

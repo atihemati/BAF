@@ -17,7 +17,6 @@ ASSUMPTIONS IN SECTIONS:
 ### ------------------------------- ###
 
 import matplotlib.pyplot as plt
-from matplotlib import rc
 import pandas as pd
 from pandas.errors import EmptyDataError
 import numpy as np
@@ -26,11 +25,11 @@ import gams
 import platform
 import click
 import os
-import sys
 import pickle
 import configparser
-from Functions.GeneralHelperFunctions import symbol_to_df, create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
-
+from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
+from pybalmorel import Balmorel
+from pybalmorel.utils import symbol_to_df
 
 @click.command()
 @click.option('--sc-name', type=str, default=None, help="Scenario name")
@@ -63,7 +62,7 @@ def peri_process(sc_name: str):
             plt.style.use('dark_background')
             fc = 'none'
 
-        ### 0.2 Checking if running this script by itself
+        # 0.2 Checking if running this script by itself
         if __name__ == '__main__':
             test_mode = 'Y' # Set to N if you're running iterations
             print('\n----------------------------\n\n        Test mode ON\n\n----------------------------\n')
@@ -75,8 +74,14 @@ def peri_process(sc_name: str):
             wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))  
 
         ant_study = '/Antares' # the specific antares study
+        
+        ### Iteration Data
+        i = Config.getint('RunMetaData', 'CurrentIter')
+        
+        ### Scenario
+        SC = sc_name + '_Iter%d'%i 
 
-        ### 0.3 Technologies transfered from Balmorel, with marginal costs
+        # 0.3 Technologies transfered from Balmorel, with marginal costs
         with open(wk_dir + '/Pre-Processing/Output/BalmTechs.pkl', 'rb') as f:
             BalmTechs = pickle.load(f)
 
@@ -105,8 +110,6 @@ def peri_process(sc_name: str):
         C = pd.Series(list(B2A_regi.keys())).str[:2].unique()
 
         # Weights
-        with open(wk_dir + '/Pre-Processing/Output/B2A_DH2_weights.pkl', 'rb') as f:
-            B2A_DH2_weights = pickle.load(f) # Hydrogen
         with open(wk_dir + '/Pre-Processing/Output/B2A_DE_weights.pkl', 'rb') as f:
             B2A_DE_weights = pickle.load(f) # Electricity
 
@@ -114,26 +117,24 @@ def peri_process(sc_name: str):
         # Base factor on fictive electricity demand 
         fict_de_factor = 1
 
-        # GDATA
+        # Load results and data
         ws = gams.GamsWorkspace()
+        db0 = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC.replace('Iter%d'%i, 'Iter0')))
         ALLENDOFMODEL = ws.add_database_from_gdx(wk_dir + '/Balmorel/%s/model/all_endofmodel.gdx'%SC_folder)
         GDATA = symbol_to_df(ALLENDOFMODEL, 'GDATA', ['G', 'Par', 'Value']).groupby(by=['G', 'Par']).aggregate({'Value' : 'sum'})
         FDATA = symbol_to_df(ALLENDOFMODEL, 'FDATA', ['F', 'Type', 'Value']).groupby(by=['F', 'Type']).aggregate({'Value' : 'sum'})
         FPRICE = symbol_to_df(ALLENDOFMODEL, 'FUELPRICE1', ['Y', 'R', 'F', 'Value']).groupby(by=['Y', 'R', 'F']).aggregate({'Value' : 'sum'})
         EMI_POL = symbol_to_df(ALLENDOFMODEL, 'EMI_POL', ['Y', 'C', 'Group', 'Par', 'Value']).groupby(by=['Y', 'C', 'Group', 'Par']).aggregate({'Value' : 'sum'})
         ANNUITYCG = symbol_to_df(ALLENDOFMODEL, 'ANNUITYCG', ['C', 'G', 'Value']).groupby(by=['C', 'G']).aggregate({'Value' : 'sum'})
-
-        # Distribution loss
-        DISLOSSEL = symbol_to_df(ALLENDOFMODEL, 'DISLOSS_E', ['R', 'Value']).pivot_table(index='R',
-                                                                                    values='Value')
-        DISLOSSH2 = symbol_to_df(ALLENDOFMODEL, 'DISLOSS_H2', ['R', 'Value']).pivot_table(index='R',
-                                                                                    values='Value')
-
-        ### 0.5 Iteration Data
-        i = Config.getint('RunMetaData', 'CurrentIter')
+        DISLOSSEL = symbol_to_df(ALLENDOFMODEL, 'DISLOSS_E', ['R', 'Value']).pivot_table(index='R', values='Value')
         
-        ## Scenario
-        SC = sc_name + '_Iter%d'%i 
+
+        ## All input data (should have been loaded in initialisation)
+        m = Balmorel('Balmorel')
+        m.load_incfiles(SC_folder)
+        electricity_demand = symbol_to_df(m.input_data[SC_folder], 'DE')
+        electricity_profiles = symbol_to_df(m.input_data[SC_folder], 'DE_VAR_T')
+        del m # release some memory
     
 
         ### 0.6 Placeholders
@@ -574,7 +575,6 @@ def peri_process(sc_name: str):
         print('Annual electricity demands to Antares...\n')
 
         ### 5.1 Load exogenous electricity demands from first iteration
-        db0 = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC.replace('Iter%d'%i, 'Iter0')))
         dem_iter0 = symbol_to_df(db0, 'EL_DEMAND_YCR',
                         ['Y', 'C', 'R', 'Type', 'Unit', 'Value']) # First iteration is to get 'real' exogenous demand, not fictive
     
@@ -583,53 +583,39 @@ def peri_process(sc_name: str):
         for region in A2B_regi.keys():
             
             
-            # Load Antares demand
-            # ant_dem = pd.read_csv(wk_dir+ant_study + '/input/load/series/load_%s_normalised-data.txt'%(region), sep='\t', header=None)
-            ant_dem = pd.read_table('Antares/input/load/series/load_{region}.txt'.format(region=region.lower()), header=None)
-            ant_dem = ant_dem / ant_dem.sum().max()
-            
-            # Plot demands
-            # fig, ax = plt.subplots()
-            # ant_dem.plot(ax=ax)
-            # ax.set_title(region + ' - Before Balm Demands')
-            # ax.legend(ncol=2, loc='center', bbox_to_anchor=(1.2, .5), title='Stochastic Year')
-                
-            ann_dem = 0 # Annual demand in Antares node    
+            profile = np.zeros(8784) # Annual demand in Antares node    
+            ann_dem = 0
             flex_dem = 0 # Annual flexible demand
             for balmorel_region in A2B_regi[region]:
 
-                # Get weight from amount of corresponding areas in Balmorel
-                # weight = B2A_DE_weights[balmorel_region][region.lower()]
-                weight = 1
-            
-                # Filter region and PtX, sum all demands
-                # NOTE: Divide this into industry, datacenter and residential+other profiles!
-                idx = (dem_iter0.Type == 'EXOGENOUS') & (dem_iter0.R == balmorel_region) & (dem_iter0.Y == year) 
-                idx = (dem_iter0.R == balmorel_region) & (dem_iter0.Y == year) # ALL electricity demand!
-                print('Exogenous demand in %s, year %s'%(balmorel_region, year), round(dem_iter0.loc[idx, 'Value'].sum()), 'TWh')
+                # Get weather independant profiles
                 
+                profiles = electricity_profiles.query('RRR == @balmorel_region').pivot_table(index=['SSS', 'TTT'], columns='DEUSER', values='Value', aggfunc='sum', fill_value=0)
+                demand = electricity_demand.query('RRR == @balmorel_region and YYY == @year').pivot_table(index='DEUSER', values='Value', aggfunc='sum', fill_value=0)
+                
+                profiles = profiles / profiles.sum()
+                
+                for col in profiles.columns:
+                    if col in demand.index:       
+                        profiles.loc[:, col] = profiles.loc[:, col] * demand.loc[col, 'Value'] / (1 - DISLOSSEL.loc[balmorel_region, 'Value']) 
+                    else:
+                        profiles.loc[:, col] = profiles.loc[:, col] * 0
+                        
                 # Increment demand and add distribution loss
-                ann_dem += weight * dem_iter0.loc[idx, 'Value'].sum() / (1 - DISLOSSEL.loc[balmorel_region, 'Value']) 
+                ann_dem += profiles.sum().sum()
+                profile[:8736] += profiles.sum(axis=1)
                 
                 print('Assigning to %s...'%(region))
+            
                 
-                
-            print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(region, ann_dem))
+            print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(region, ann_dem/1e6))
 
             # Save
-            # NOTE: Maybe do as noted above instead, so: ant_dem * (DE from rese + other) + DE_industry/8760 + DE_datacenter/8760
-            ant_dem = np.round(ant_dem * ann_dem * 1e6).astype(int) # To timeseries
-            ant_dem.to_csv(wk_dir + ant_study + '/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
-
-            
-            # Plot the new demands
-            # fig, ax = plt.subplots()
-            # ant_dem.plot(ax=ax)
-            # ax.set_title(region + ' - After Balm Demands')
-            # ax.annotate('Total Dem: %d TWh'%(ant_dem.sum().mean()/1e6), xy=(.75, .75))
-            # ax.legend(ncol=2, loc='center', bbox_to_anchor=(1.2, .5), title='Stochastic Year')
-            # fig.savefig('MetaResults/' + '_'.join((SC, 'AntExoElDem', region)) + '.png', bbox_inches='tight')
-                
+            # NOTE: Maybe do as noted above instead, so: profiles * (DE from rese + other) + DE_industry/8760 + DE_datacenter/8760
+            profile[8736:] = 0
+            profile = profile.round().astype(int) 
+            pd.DataFrame({'values' : profile}).to_csv(wk_dir + ant_study + '/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
+  
         
         #%% ------------------------------- ###
         ### 6. Weekly Resource Constraints  ###         
