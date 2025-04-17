@@ -53,8 +53,6 @@ def peri_process(sc_name: str):
         Config = configparser.ConfigParser()
         Config.read('Workflow/MetaResults/%s_meta.ini'%sc_name)
         SC_folder = Config.get('RunMetaData', 'SC_Folder')
-        UseAntaresData = Config.getboolean('PeriProcessing', 'UseAntaresData')
-        UsePseudoBenders = Config.getboolean('PostProcessing', 'PseudoBenders')
         
         # Plot settings
         style = Config.get('Analysis', 'plot_style')
@@ -139,9 +137,6 @@ def peri_process(sc_name: str):
     
 
         ### 0.6 Placeholders
-        if UsePseudoBenders:
-            CapacityInRegion = {}
-
         print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
         ### 0.7 Load MainResults
         db = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC))
@@ -158,14 +153,7 @@ def peri_process(sc_name: str):
         cap = symbol_to_df(db, "G_CAP_YCRAF",
                         ['Y', 'C', 'R', 'A', 'G', 'F', 'Commodity', 'Tech', 'Var', 'Unit', 'Value'])
 
-        ## Placeholder for saving total generation capacities from Balmorel in aggregated form
-        # cap_sum = pd.DataFrame({tech : np.zeros(len(cap.R.unique())) for tech in ['WIND', 'SUN', 'BIOGAS']},
-        #                   index=cap.R.unique())
-        # sim_year = cap['Y'][0] # Assuming we're only running one year!
         
-        ## Load mapped areas
-        VRE_MAPPING = pd.read_csv(wk_dir + '/Pre-Processing/Output/AreaMapping.csv', index_col=0)
-
         for tech in B2A_ren.keys(): 
             
             # Filter tech
@@ -174,30 +162,24 @@ def peri_process(sc_name: str):
             p = '..' + ant_study + '/input/%s/series/'%(B2A_ren[tech])
             
             # Iterate through Antares areas
-            for a in A2B_regi.keys():
+            for region in A2B_regi.keys():
                     
-                # Read Antares Config file for area a
+                # Read Antares Config file for region
                 area_config = configparser.ConfigParser()
-                area_config.read('Antares/input/renewables/clusters/%s/list.ini'%a.lower())
+                area_config.read('Antares/input/renewables/clusters/%s/list.ini'%region.lower())
                     
                 # Sum capacity from Balmorel Regions
                 tech_cap = 0
-                # If not using antares data: Weight wrt. electricity demand and divide by amount of areas
-                if not(UseAntaresData):
-                    for BalmR in A2B_regi[a]: 
-                        # Get amount of antares regions 
-                        idx2 = idx & (cap.R == BalmR)
-                        if not(cap.loc[idx2].empty):
-                            tech_cap += cap.loc[idx2, 'Value'].sum()*1000 * B2A_DE_weights[BalmR][a]
-                else:
-                    # If Balmorel is higher resolved:
-                    if len(A2B_regi[a]) > 1:
-                        for BalmArea in A2B_regi[a]:
-                            tech_cap += cap.loc[idx & (cap.R == BalmArea), 'Value'].sum() * 1000
-                    else:                   
-                        idx_cap = idx & (cap.A == a + '_A')
-                        tech_cap = cap.loc[idx_cap, 'Value'].sum() * 1000
-                        capex = get_capex(cap, idx_cap, GDATA, ANNUITYCG)
+                
+                # If Balmorel has higher spatial resolution...
+                if len(A2B_regi[region]) > 1:
+                    for BalmArea in A2B_regi[region]:
+                        tech_cap += cap.loc[idx & (cap.R == BalmArea), 'Value'].sum() * 1000
+                # ...otherwise
+                else:                   
+                    idx_cap = idx & (cap.R == region)
+                    tech_cap = cap.loc[idx_cap, 'Value'].sum() * 1000
+                    capex = get_capex(cap, idx_cap, GDATA, ANNUITYCG)
                     
                 if (tech_cap > 1e-5):
                     area_config.set(B2A_ren[tech], 'nominalcapacity', str(tech_cap))
@@ -208,19 +190,15 @@ def peri_process(sc_name: str):
                                         
                 # Save data
                 # ASSUMPTION: Peak production = 95% of Capacity (See pre-processing script)
-                # ((f * tech_cap).astype(int)).to_csv(p + B2A_ren[tech] + '_%s.txt'%a, sep='\t', header=None, index=None)
-                with open('Antares/input/renewables/clusters/%s/list.ini'%a.lower(), 'w') as configfile:
+                # ((f * tech_cap).astype(int)).to_csv(p + B2A_ren[tech] + '_%s.txt'%region, sep='\t', header=None, index=None)
+                with open('Antares/input/renewables/clusters/%s/list.ini'%region.lower(), 'w') as configfile:
                     area_config.write(configfile)
-                print(a, B2A_ren[tech], round(tech_cap, 2), 'MW')
+                print(region, B2A_ren[tech], round(tech_cap, 2), 'MW')
 
                 # Save technoeconomic data to file
-                if tech == 'WIND':
-                    techname = 'wind onshore'
-                else:
-                    techname = 'solar pv'
-                fAntTechno.loc[(i, year, a, techname), 'CAPEX'] = capex
-                fAntTechno.loc[(i, year, a, techname), 'OPEX'] = 0
-                fAntTechno.loc[(i, year, a, techname), 'Power Capacity'] = tech_cap 
+                fAntTechno.loc[(i, year, region, tech), 'CAPEX'] = capex
+                fAntTechno.loc[(i, year, region, tech), 'OPEX'] = 0
+                fAntTechno.loc[(i, year, region, tech), 'Power Capacity'] = tech_cap 
                 
         #%% ------------------------------- ###
         ###      2. Thermal Capacities      ###
@@ -237,8 +215,8 @@ def peri_process(sc_name: str):
                                             'Tech', 'Unit', 'Value'])
 
         # Read the binding constraint
-        Config = configparser.ConfigParser()
-        Config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
+        bc_config = configparser.ConfigParser()
+        bc_config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
 
         # Placeholders for modulation and data
         thermal_modulation = '\n'.join(['1\t1\t1\t0' for i in range(8760)]) + '\n'
@@ -246,12 +224,11 @@ def peri_process(sc_name: str):
 
 
         ### 2.1 Go through regions
+        thermal_config = configparser.ConfigParser()
         for area in A2B_regi.keys():
             
             ### 2.2 Get tech capacities
-            if UsePseudoBenders:
-                CapacityInRegion[area] = {}
-            thermal_cap = "" # String for .ini file
+            thermal_config.read('Antares/input/thermal/clusters/%s/list.ini'%area.lower())
             
             # Technologies as defined by aggregated tech categories in BalmTechs dict
             for tech in BalmTechs.keys():
@@ -326,36 +303,18 @@ def peri_process(sc_name: str):
                         # No negative or zero marginal costs in Antares
                         if mc_cost <= 0:
                             mc_cost = 1
-                            
-                        # Store for Pseudo-Benders binding constraint
-                        if UsePseudoBenders:
-                            tech_cap = 5e5 # A very high number
-                            CapacityInRegion[area]['_'.join((tech.lower(), fuel.lower()))] = True
                     
                     else:
                         # print(area, tech, fuel, '\nCapacity: %0.2f MW\n'%tech_cap)
                         enabled = 'false'
                         em_factor = 0
                         
-                    # print(tech, fuel, 'co2: ', BalmTechs[tech][fuel]['CO2'])
-                    
-                    # Save capacity to string for .ini file
-                    thermal_cap = thermal_cap +\
-                                    """[%s_%s]\n
-                                    name = %s_%s\n
-                                    group = %s\n
-                                    enabled = %s\n
-                                    unitcount = 1\n
-                                    nominalcapacity = %d\n
-                                    co2 = %0.2f\n
-                                    marginal-cost = %d\n
-                                    market-bid-cost = %d\n\n"""%(tech.lower(), fuel.lower(),
-                                                                    tech.lower(), fuel.lower(),
-                                                                    fuel.lower(), enabled,
-                                                                    int(round(tech_cap)),
-                                                                    em_factor,
-                                                                    int(round(mc_cost)),
-                                                                    int(round(mc_cost)))
+                    # Save
+                    thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'enabled', enabled)
+                    thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'nominalcapacity', str(round(tech_cap)))
+                    thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'co2', str(em_factor))
+                    thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'marginal-cost', str(round(mc_cost)))
+                    thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'market-bid-cost', str(round(mc_cost)))
                     
                     # Create transmission capacity for hydrogen offtake, for fuel cell:
                     if (tech == 'FUELCELL') & (fuel == 'HYDROGEN'):
@@ -366,16 +325,16 @@ def peri_process(sc_name: str):
                     
                             # Efficiency 
                             generator = '{reg}%{virtual_node}'.format(reg='z_h2_c3_' + area.lower(), virtual_node='z_taking')
-                            for section in Config.sections():
-                                if generator in Config.options(section):
+                            for section in bc_config.sections():
+                                if generator in bc_config.options(section):
                                     # print('%s is in section %s'%(generator, section))
                                     # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                                    Config.set(section, generator, '-' + str(round(eff, 6)))
+                                    bc_config.set(section, generator, '-' + str(round(eff, 6)))
                                     
                                     if tech_cap > 1e-5:
-                                        Config.set(section, 'enabled', 'true')
+                                        bc_config.set(section, 'enabled', 'true')
                                     else:
-                                        Config.set(section, 'enabled', 'false')
+                                        bc_config.set(section, 'enabled', 'false')
                     
                     # Save capacity timeseries (assuming no outage!)
                     temp = pd.Series(np.ones(8760) * tech_cap).astype(int)
@@ -405,9 +364,12 @@ def peri_process(sc_name: str):
                     fAntTechno.loc[(i, year, area, tech.lower()+'_'+fuel.lower()), 'OPEX'] = mc_cost
                     fAntTechno.loc[(i, year, area, tech.lower()+'_'+fuel.lower()), 'Power Capacity'] = tech_cap 
                     
-            # Save capacity in .ini
+                    
+            # Load constant PSP capacities and save in .ini
+            
             with open(wk_dir + ant_study + '/input/thermal/clusters/%s/list.ini'%(area.lower()), 'w') as f:
-                f.write(thermal_cap)     
+                thermal_config.write(f)     
+            thermal_config.clear()
             
             ### 2.3 Get Electrolyser Capacity
             idx_cap = (cap.Commodity == 'HYDROGEN') & (cap.Tech == 'ELECTROLYZER') & (cap.Y == year)
@@ -426,11 +388,11 @@ def peri_process(sc_name: str):
                         
             # Efficiency 
             generator = '{reg}%{tech}'.format(reg=area.lower(), tech='x_c3')
-            for section in Config.sections():
-                if generator in Config.options(section):
+            for section in bc_config.sections():
+                if generator in bc_config.options(section):
                     # print('%s is in section %s'%(generator, section))
                     # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                    Config.set(section, generator, str(round(eff, 6)))
+                    bc_config.set(section, generator, str(round(eff, 6)))
                     
                     if tech_cap > 1e-5:
                         # Convert to el capacity in
@@ -440,9 +402,9 @@ def peri_process(sc_name: str):
                         print(area, 'Electrolyser\nCapacity: %0.2f MW_EL'%tech_cap)
                         print('Efficiency: %0.2f pct\n'%(eff*100))
                         
-                        Config.set(section, 'enabled', 'true')
+                        bc_config.set(section, 'enabled', 'true')
                     else:
-                        Config.set(section, 'enabled', 'false')
+                        bc_config.set(section, 'enabled', 'false')
                 
                 
             
@@ -461,8 +423,8 @@ def peri_process(sc_name: str):
 
         # Save configfile
         with open('Antares/input/bindingconstraints/bindingconstraints.ini', 'w') as configfile:
-            Config.write(configfile)
-        Config.clear()
+            bc_config.write(configfile)
+        bc_config.clear()
 
             
 
@@ -677,7 +639,6 @@ def peri_process(sc_name: str):
         with open('Antares/settings/generaldata.ini', 'r') as f:
             Config = ''.join(f.readlines())    
         stochyears = [int(stochyear.split('\n')[0].replace(' ', '').replace('+=','')) for stochyear in Config.split('playlist_year')[1:]]
-        print(stochyears)
 
         Config = configparser.ConfigParser()
         for area in A2B_regi.keys():
@@ -685,7 +646,6 @@ def peri_process(sc_name: str):
             Config.read('Antares/input/renewables/clusters/%s/list.ini'%area.lower())
 
             load = pd.read_table('Antares/input/load/series/load_%s.txt'%(area.lower()), header=None) 
-            print(load)
             load = load.loc[:, stochyears].mean(axis=1)
 
             for VRE in B2A_ren.values():
