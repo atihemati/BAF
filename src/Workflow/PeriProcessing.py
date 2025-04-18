@@ -31,6 +31,255 @@ from Functions.GeneralHelperFunctions import create_transmission_input, get_marg
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
 
+def exogenous_electricity_demand(electricity_profiles: pd.DataFrame,
+                                 electricity_demand: pd.DataFrame,
+                                 DISLOSSEL: pd.DataFrame,
+                                 A2B_regi: dict,
+                                 year: str):
+    """Create exogenous electricity profiles for Antares
+
+    Args:
+        electricity_profiles (pd.DataFrame): The timeseries
+        electricity_demand (pd.DataFrame): The annual demand
+        DISLOSSEL (pd.DataFrame): Distribution loss
+        A2B_regi (dict): Region mapping dictionary between Antares and Balmorel
+        year (str): The model year 
+    """
+    ### ------------------------------- ###
+    ###           5. Demand             ###
+    ### ------------------------------- ###
+
+    ### NOT transferring electricity-to-heat electricity demand at the moment, 
+    ### due to too hard heuristics. Will be investigated in another paper.
+    ### Will need to model heating in Antares, or make looser demand assumption on
+    ### electricity to heat
+
+    print('Annual electricity demands to Antares...\n')
+
+    # Go through regions
+    for region in A2B_regi.keys():
+        
+        
+        profile = np.zeros(8784) # Annual demand in Antares node    
+        ann_dem = 0
+        flex_dem = 0 # Annual flexible demand
+        for balmorel_region in A2B_regi[region]:
+
+            # Get weather independant profiles
+            
+            profiles = electricity_profiles.query('RRR == @balmorel_region and DEUSER != "FICTDEM"').pivot_table(index=['SSS', 'TTT'], columns='DEUSER', values='Value', aggfunc='sum', fill_value=0)
+            demand = electricity_demand.query('RRR == @balmorel_region and YYY == @year and DEUSER != "FICTDEM"').pivot_table(index='DEUSER', values='Value', aggfunc='sum', fill_value=0)
+            
+            profiles = profiles / profiles.sum()
+            
+            for col in profiles.columns:
+                if col in demand.index:       
+                    profiles.loc[:, col] = profiles.loc[:, col] * demand.loc[col, 'Value'] / (1 - DISLOSSEL.loc[balmorel_region, 'Value']) 
+                else:
+                    profiles.loc[:, col] = profiles.loc[:, col] * 0
+                    
+            # Increment demand and add distribution loss
+            ann_dem += profiles.sum().sum()
+            profile[:8736] += profiles.sum(axis=1)
+            
+            print('Assigning to %s...'%(region))
+        
+            
+        print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(region, ann_dem/1e6))
+
+        # Save
+        # NOTE: Maybe do as noted above instead, so: profiles * (DE from rese + other) + DE_industry/8760 + DE_datacenter/8760
+        profile[8736:] = 0
+        profile = profile.round().astype(int) 
+        pd.DataFrame({'values' : profile}).to_csv('Antares/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
+
+
+def weekly_resource_constraints(ALLENDOFMODEL: gams.GamsDatabase,
+                                A2B_regi: dict,
+                                B2A_ren: dict,
+                                BalmTechs: dict,
+                                year: str,
+                                GDATA: pd.DataFrame,
+                                cap: pd.DataFrame):
+    ### ------------------------------- ###
+    ### 6. Weekly Resource Constraints  ###         
+    ### ------------------------------- ###
+
+    ### 6.1 Calculates residual demand profiles (electricity load - VRE profile) 
+    ###     and uses this normalised series to factor on annual resource availability 
+
+    GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
+    GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
+    CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
+    CCCRRR['Done?'] = False
+
+    # Load the stochastic years used 
+    with open('Antares/settings/generaldata.ini', 'r') as f:
+        Config = ''.join(f.readlines())    
+    stochyears = [int(stochyear.split('\n')[0].replace(' ', '').replace('+=','')) for stochyear in Config.split('playlist_year')[1:]]
+
+    Config = configparser.ConfigParser()
+    for region in A2B_regi.keys():
+            
+        Config.read('Antares/input/renewables/clusters/%s/list.ini'%region.lower())
+
+        load = pd.read_table('Antares/input/load/series/load_%s.txt'%(region.lower()), header=None).loc[:, 0]
+
+        for VRE in B2A_ren.values():
+            
+            # Production series
+            try:
+                f = pd.read_table('Antares/input/renewables/series/{region}/{VRE}/series.txt'.format(region=region.lower(), VRE=VRE), header=None)
+            
+                # Get capacity input
+                vrecap = Config.getfloat(VRE, 'nominalcapacity')
+                
+                # Calculate mean absolute production profile through stochastic years
+                vre = f.loc[:, stochyears].mean(axis=1)*vrecap
+                load = load - vre # Residual load
+                
+            except EmptyDataError:
+                pass
+                # print('No profile for %s in %s'%(VRE, region))
+
+
+        # Plot Residual LDC
+        # fig, ax = plt.subplots()
+        # x, y = doLDC(resload, 100)
+        # ax.plot(np.cumsum(x), y)
+        
+        # Sum weekly residual loads
+        resload_week = load.rolling(window=168).sum()
+        resload_week = resload_week[167::168] # Only snapshots in the end of each week
+        resload_week.index = [i for i in range(1, 53)]
+        resload_week = resload_week - resload_week.min() # Zero availability in best month
+        resload_week = resload_week / resload_week.sum() # Normalise energy
+        
+        # All fuels, except municipal waste
+        fuels = [fuel for fuel in pd.DataFrame(BalmTechs).index.to_list() if fuel != 'MUNIWASTE' and fuel != 'HYDROGEN' and fuel != 'NUCLEAR']
+
+
+        Config.clear()
+        # Read the binding constraint
+        Config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
+
+        R = A2B_regi[region][0] # Just any region - regions are all within a country
+        country = CCCRRR[CCCRRR.R.str.find(R) != -1].index[0] 
+        
+        ### 6.2 Set Efficiency of Generators in region, if it has a capacity
+        for fuel in fuels:
+            for tech in BalmTechs.keys():
+                
+                # Calculate average efficiency of all G types
+                N_reg = 0
+                eff = 0
+                for balmorel_region in A2B_regi[region]:
+                    idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == fuel) & (cap.Tech == tech) & (cap.Y == year)
+                    if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
+                        eff += get_efficiency(cap, idx_cap, GDATA)
+                        N_reg += 1
+                
+                if N_reg > 0:
+                    eff = eff / N_reg
+
+                    generator = '{reg}.{tech}_{fuel}'.format(reg=region.lower(), tech=tech.lower(), fuel=fuel.lower())
+                    for section in Config.sections():
+                        if generator in Config.options(section):
+                            # print('%s is in section %s'%(generator, section))
+                            # print('Setting %s to efficiency %0.2f'%(generator, eff))
+                            Config.set(section, generator, str(round(1/eff, 2)))
+        
+            ### 6.3 Calculate Weekly Fuel Limits for all fuels but Muniwaste, if not already done
+            if not(CCCRRR.loc[country, 'Done?']):
+                try:
+                    pot = GMAXF.loc[(GMAXF.F == fuel) & (GMAXF.CRA == country) & (GMAXF.Y == year), 'Value'].values[0]/3.6 # To MWh
+                except IndexError:
+                    pot = 0
+                
+                # Write it
+                with open('Antares/input/bindingconstraints/%sres_%s.txt'%(fuel.lower(), country.lower()), 'w') as f:
+                    for week_distribution in resload_week:
+                        for i in range(7):
+                            
+                            if pot > 0:
+                                # If there is a potential specified
+                                f.write('%0.2f\t0\t0\n'%(week_distribution*pot/7))
+                            else:
+                                # If there is no potential specified, put a very high limit
+                                f.write('%0.2f\t0\t0\n'%(1e12))
+
+                    # The last week
+                    if pot > 0:
+                        for i in range(2):
+                            f.write('%0.2f\t0\t0\n'%(week_distribution*pot/7))
+                    else:                
+                        for i in range(2):
+                            f.write('%0.2f\t0\t0\n'%(1e12))
+                            
+        ### 6.4 Input weekly fuel limit for muniwaste in region
+        ## Calculate average efficiency of all G types
+        N_reg = 0
+        eff = 0
+        for balmorel_region in A2B_regi[region]:
+            idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == 'MUNIWASTE') & (cap.Tech == tech) & (cap.Y == year)
+            if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
+                eff += get_efficiency(cap, idx_cap, GDATA)
+                N_reg += 1
+        
+        if N_reg > 0:
+            eff = eff / N_reg
+
+            generator = '{reg}.{tech}_muniwaste'.format(reg=region.lower(), tech=tech.lower())
+            for section in Config.sections():
+                if generator in Config.options(section):
+                    # print('%s is in section %s'%(generator, section))
+                    # print('Setting %s to efficiency %0.2f'%(generator, eff))
+                    Config.set(section, generator, str(round(1/eff, 2)))
+        
+        # Save configfile
+        with open('Antares/input/bindingconstraints/bindingconstraints.ini', 'w') as configfile:
+            Config.write(configfile)
+        Config.clear()
+            
+        
+        ## Write potential
+        idx = (GMAXFS.F == 'MUNIWASTE') & (GMAXFS.Y == year) 
+        idx2 = GMAXFS.CRA != GMAXFS.CRA
+        
+        # Aggregate, in case Balmorel is higher resolved
+        weight = 0
+        for balmorel_region in A2B_regi[region]:
+            idx2 = idx2 | (GMAXFS.CRA == balmorel_region)
+                    
+            # Disaggregate, if Antares is higher resolved
+            # weight += B2A_DE_weights[balmorel_region][region] / len(A2B_regi[region])
+            weight += 1
+        # print('%s weight: %0.2f'%(region, weight))
+            
+        pot = GMAXFS.loc[idx & idx2].groupby(by=['S']).aggregate({'Value' : "sum"})
+        with open('Antares/input/bindingconstraints/muniwasteres_%s.txt'%(region.lower()), 'w') as f:
+            for week in pot.index:
+                pot0 = pot.loc[week, 'Value']/3.6 * weight # To MWh
+                for i in range(7):
+                    if pot0 > 0:
+                        # If there is a potential specified
+                        f.write('%0.2f\t0\t0\n'%(pot0/7))
+                    else:
+                        # If there is no potential specified, put a very high limit
+                        f.write('%0.2f\t0\t0\n'%(1e12))
+
+            # The last week
+            if pot0 > 0:
+                for i in range(2):
+                    f.write('%0.2f\t0\t0\n'%(pot0/7))
+            else:                
+                for i in range(2):
+                    f.write('%0.2f\t0\t0\n'%(1e12))
+            
+        # Done. Don't have to do this for the next region in the same country
+        CCCRRR.loc[country, 'Done?'] = True
+
+
 def peri_process(sc_name: str):
     """The processing of results from Balmorel to Antares
 
@@ -145,7 +394,7 @@ def peri_process(sc_name: str):
     db = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC))
 
 
-    #%% ------------------------------- ###
+    ### ------------------------------- ###
     ###   1. Wind and Solar Capacities  ###
     ### ------------------------------- ###
 
@@ -565,238 +814,14 @@ def peri_process(sc_name: str):
         # Save it 
         create_transmission_input(wk_dir, ant_study, row['from'], row['to'], [trans_cap_from, trans_cap_to], 0.01)
 
-    #%% ------------------------------- ###
-    ###           5. Demand             ###
-    ### ------------------------------- ###
+    # Exogenous Electricity Demand Profile
+    exogenous_electricity_demand(electricity_profiles,
+                                 electricity_demand, DISLOSSEL, 
+                                 A2B_regi, year)
 
-    ### NOT transferring electricity-to-heat electricity demand at the moment, 
-    ### due to too hard heuristics. Will be investigated in another paper.
-    ### Will need to model heating in Antares, or make looser demand assumption on
-    ### electricity to heat
-
-    print('Annual electricity demands to Antares...\n')
-
-    ### 5.1 Load exogenous electricity demands from first iteration
-    dem_iter0 = symbol_to_df(db0, 'EL_DEMAND_YCR',
-                    ['Y', 'C', 'R', 'Type', 'Unit', 'Value']) # First iteration is to get 'real' exogenous demand, not fictive
-
-
-    ### 5.2 Go through regions
-    for region in A2B_regi.keys():
-        
-        
-        profile = np.zeros(8784) # Annual demand in Antares node    
-        ann_dem = 0
-        flex_dem = 0 # Annual flexible demand
-        for balmorel_region in A2B_regi[region]:
-
-            # Get weather independant profiles
-            
-            profiles = electricity_profiles.query('RRR == @balmorel_region').pivot_table(index=['SSS', 'TTT'], columns='DEUSER', values='Value', aggfunc='sum', fill_value=0)
-            demand = electricity_demand.query('RRR == @balmorel_region and YYY == @year').pivot_table(index='DEUSER', values='Value', aggfunc='sum', fill_value=0)
-            
-            profiles = profiles / profiles.sum()
-            
-            for col in profiles.columns:
-                if col in demand.index:       
-                    profiles.loc[:, col] = profiles.loc[:, col] * demand.loc[col, 'Value'] / (1 - DISLOSSEL.loc[balmorel_region, 'Value']) 
-                else:
-                    profiles.loc[:, col] = profiles.loc[:, col] * 0
-                    
-            # Increment demand and add distribution loss
-            ann_dem += profiles.sum().sum()
-            profile[:8736] += profiles.sum(axis=1)
-            
-            print('Assigning to %s...'%(region))
-        
-            
-        print('Resulting annual electricity demand in %s = %0.2f TWh\n'%(region, ann_dem/1e6))
-
-        # Save
-        # NOTE: Maybe do as noted above instead, so: profiles * (DE from rese + other) + DE_industry/8760 + DE_datacenter/8760
-        profile[8736:] = 0
-        profile = profile.round().astype(int) 
-        pd.DataFrame({'values' : profile}).to_csv(wk_dir + ant_study + '/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
-
-    
-    #%% ------------------------------- ###
-    ### 6. Weekly Resource Constraints  ###         
-    ### ------------------------------- ###
-
-    ### 6.1 Calculates residual demand profiles (electricity load - VRE profile) 
-    ###     and uses this normalised series to factor on annual resource availability 
-
-    GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
-    GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
-    CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
-    CCCRRR['Done?'] = False
-
-    # Load the stochastic years used 
-    with open('Antares/settings/generaldata.ini', 'r') as f:
-        Config = ''.join(f.readlines())    
-    stochyears = [int(stochyear.split('\n')[0].replace(' ', '').replace('+=','')) for stochyear in Config.split('playlist_year')[1:]]
-
-    Config = configparser.ConfigParser()
-    for region in A2B_regi.keys():
-            
-        Config.read('Antares/input/renewables/clusters/%s/list.ini'%region.lower())
-
-        load = pd.read_table('Antares/input/load/series/load_%s.txt'%(region.lower()), header=None).loc[:, 0]
-
-        for VRE in B2A_ren.values():
-            
-            # Production series
-            try:
-                f = pd.read_table('Antares/input/renewables/series/{region}/{VRE}/series.txt'.format(region=region.lower(), VRE=VRE), header=None)
-            
-                # Get capacity input
-                vrecap = Config.getfloat(VRE, 'nominalcapacity')
-                
-                # Calculate mean absolute production profile through stochastic years
-                vre = f.loc[:, stochyears].mean(axis=1)*vrecap
-                load = load - vre # Residual load
-                
-            except EmptyDataError:
-                pass
-                # print('No profile for %s in %s'%(VRE, region))
-
-
-        # Plot Residual LDC
-        # fig, ax = plt.subplots()
-        # x, y = doLDC(resload, 100)
-        # ax.plot(np.cumsum(x), y)
-        
-        # Sum weekly residual loads
-        resload_week = load.rolling(window=168).sum()
-        resload_week = resload_week[167::168] # Only snapshots in the end of each week
-        resload_week.index = [i for i in range(1, 53)]
-        resload_week = resload_week - resload_week.min() # Zero availability in best month
-        resload_week = resload_week / resload_week.sum() # Normalise energy
-        
-        # All fuels, except municipal waste
-        fuels = [fuel for fuel in pd.DataFrame(BalmTechs).index.to_list() if fuel != 'MUNIWASTE' and fuel != 'HYDROGEN' and fuel != 'NUCLEAR']
-
-
-        Config.clear()
-        # Read the binding constraint
-        Config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
-
-        R = A2B_regi[region][0] # Just any region - regions are all within a country
-        country = CCCRRR[CCCRRR.R.str.find(R) != -1].index[0] 
-        
-        ### 6.2 Set Efficiency of Generators in region, if it has a capacity
-        for fuel in fuels:
-            for tech in BalmTechs.keys():
-                
-                # Calculate average efficiency of all G types
-                N_reg = 0
-                eff = 0
-                for balmorel_region in A2B_regi[region]:
-                    idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == fuel) & (cap.Tech == tech) & (cap.Y == year)
-                    if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
-                        eff += get_efficiency(cap, idx_cap, GDATA)
-                        N_reg += 1
-                
-                if N_reg > 0:
-                    eff = eff / N_reg
-
-                    generator = '{reg}.{tech}_{fuel}'.format(reg=region.lower(), tech=tech.lower(), fuel=fuel.lower())
-                    for section in Config.sections():
-                        if generator in Config.options(section):
-                            # print('%s is in section %s'%(generator, section))
-                            # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                            Config.set(section, generator, str(round(1/eff, 2)))
-        
-            ### 6.3 Calculate Weekly Fuel Limits for all fuels but Muniwaste, if not already done
-            if not(CCCRRR.loc[country, 'Done?']):
-                try:
-                    pot = GMAXF.loc[(GMAXF.F == fuel) & (GMAXF.CRA == country) & (GMAXF.Y == year), 'Value'].values[0]/3.6 # To MWh
-                except IndexError:
-                    pot = 0
-                
-                # Write it
-                with open('Antares/input/bindingconstraints/%sres_%s.txt'%(fuel.lower(), country.lower()), 'w') as f:
-                    for week_distribution in resload_week:
-                        for i in range(7):
-                            
-                            if pot > 0:
-                                # If there is a potential specified
-                                f.write('%0.2f\t0\t0\n'%(week_distribution*pot/7))
-                            else:
-                                # If there is no potential specified, put a very high limit
-                                f.write('%0.2f\t0\t0\n'%(1e12))
-
-                    # The last week
-                    if pot > 0:
-                        for i in range(2):
-                            f.write('%0.2f\t0\t0\n'%(week_distribution*pot/7))
-                    else:                
-                        for i in range(2):
-                            f.write('%0.2f\t0\t0\n'%(1e12))
-                            
-        ### 6.4 Input weekly fuel limit for muniwaste in region
-        ## Calculate average efficiency of all G types
-        N_reg = 0
-        eff = 0
-        for balmorel_region in A2B_regi[region]:
-            idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == 'MUNIWASTE') & (cap.Tech == tech) & (cap.Y == year)
-            if cap.loc[idx_cap, 'Value'].sum()*1000 > 1e-6:   
-                eff += get_efficiency(cap, idx_cap, GDATA)
-                N_reg += 1
-        
-        if N_reg > 0:
-            eff = eff / N_reg
-
-            generator = '{reg}.{tech}_muniwaste'.format(reg=region.lower(), tech=tech.lower())
-            for section in Config.sections():
-                if generator in Config.options(section):
-                    # print('%s is in section %s'%(generator, section))
-                    # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                    Config.set(section, generator, str(round(1/eff, 2)))
-        
-        # Save configfile
-        with open('Antares/input/bindingconstraints/bindingconstraints.ini', 'w') as configfile:
-            Config.write(configfile)
-        Config.clear()
-            
-        
-        ## Write potential
-        idx = (GMAXFS.F == 'MUNIWASTE') & (GMAXFS.Y == year) 
-        idx2 = GMAXFS.CRA != GMAXFS.CRA
-        
-        # Aggregate, in case Balmorel is higher resolved
-        weight = 0
-        for balmorel_region in A2B_regi[region]:
-            idx2 = idx2 | (GMAXFS.CRA == balmorel_region)
-                    
-            # Disaggregate, if Antares is higher resolved
-            # weight += B2A_DE_weights[balmorel_region][region] / len(A2B_regi[region])
-            weight += 1
-        # print('%s weight: %0.2f'%(region, weight))
-            
-        pot = GMAXFS.loc[idx & idx2].groupby(by=['S']).aggregate({'Value' : "sum"})
-        with open('Antares/input/bindingconstraints/muniwasteres_%s.txt'%(region.lower()), 'w') as f:
-            for week in pot.index:
-                pot0 = pot.loc[week, 'Value']/3.6 * weight # To MWh
-                for i in range(7):
-                    if pot0 > 0:
-                        # If there is a potential specified
-                        f.write('%0.2f\t0\t0\n'%(pot0/7))
-                    else:
-                        # If there is no potential specified, put a very high limit
-                        f.write('%0.2f\t0\t0\n'%(1e12))
-
-            # The last week
-            if pot0 > 0:
-                for i in range(2):
-                    f.write('%0.2f\t0\t0\n'%(pot0/7))
-            else:                
-                for i in range(2):
-                    f.write('%0.2f\t0\t0\n'%(1e12))
-            
-        # Done. Don't have to do this for the next region in the same country
-        CCCRRR.loc[country, 'Done?'] = True
-
+    # Resource Constraints
+    weekly_resource_constraints(ALLENDOFMODEL, A2B_regi, B2A_ren,
+                                BalmTechs, year, GDATA, cap)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')
