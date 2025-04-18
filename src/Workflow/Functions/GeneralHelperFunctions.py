@@ -253,7 +253,7 @@ def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
         
         # Fuel cost
         try:
-            mc_cost_temp += FPRICE.loc[(year, 'DK1', fuel), 'Value'] / GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK1
+            mc_cost_temp += FPRICE.loc[(year, 'DK', fuel), 'Value'] / GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK
             # print('Added fuel cost: ', mc_cost_temp)
         except:
             pass
@@ -288,7 +288,7 @@ def get_efficiency(cap: pd.DataFrame, idx_cap: pd.Index, GDATA: pd.DataFrame):
         
         # Fuel cost
         try:
-            eff_temp += GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK1
+            eff_temp += GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK
             # print('Added fuel cost: ', mc_cost_temp)
         except:
             pass

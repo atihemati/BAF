@@ -134,13 +134,23 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
 
     print('\nThermal capacities to Antares...\n')
 
-    # Get costs
+    # Get economic parameters
+    
+    ## Overall
     eco = symbol_to_df(db, 'ECO_G_YCRAG', ['Y', 'C', 'R', 'A', 'G', 'F', 
                                         'Tech', 'Var', 'Subvar', 'Unit', 'Value'])
 
+    ## Hourly hydrogen price 
+    h2_price_hourly = symbol_to_df(db, 'H2_PRICE_YCRST')
+
     # Get production
+    
+    ## Annual
     pro = symbol_to_df(db, 'PRO_YCRAGF', ['Y', 'C', 'R', 'A', 'G', 'F', 'Commodity', 
                                         'Tech', 'Unit', 'Value'])
+
+    ## Hourly (Only needed for fuel cell)
+    production_hourly = symbol_to_df(db, 'PRO_YCRAGFST').query('Technology == "FUELCELL"')
 
     # Read the binding constraint
     bc_config = configparser.ConfigParser()
@@ -223,7 +233,6 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                         mc_cost = mc_cost / Nreg 
                         eff = eff / Nreg
                         em_factor = BalmTechs[tech][fuel]['CO2'] / eff
-                        print(region, tech, fuel, '\nMarginal cost: %0.2f eur/MWh'%mc_cost, '\nCapacity: %0.2f MW'%tech_cap, '\nEfficiency: %0.2f pct\n'%(eff*100))
                     except ZeroDivisionError:
                         em_factor = 0
                         print('This capacity was not used')
@@ -241,32 +250,28 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                 thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'enabled', enabled)
                 thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'nominalcapacity', str(round(tech_cap)))
                 thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'co2', str(em_factor))
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'marginal-cost', str(round(mc_cost)))
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'market-bid-cost', str(round(mc_cost)))
                 
                 # Create transmission capacity for hydrogen offtake, for fuel cell:
-                if (tech == 'FUELCELL') & (fuel == 'HYDROGEN'):
-                    if ('z_h2_c3_' + region.lower() in A2B_regi_h2.keys()):
-                                                        
-                        # Capacity
-                        create_transmission_input('./', 'Antares', 'z_h2_c3_' + region.lower(), 'z_taking', tech_cap*2, 0)
+                if (tech == 'FUELCELL') & (fuel == 'HYDROGEN') & (tech_cap > 1e-5):
+                    
+                    fuellcell_production_hours = production_hourly.query('Region == @region and Year == @year').pivot_table(index=['Season', 'Time'], values='Value').index.unique()
+                    # print('Production hours of fuelcell in %s: '%region, fuellcell_production_hours)
+                    
+                    regional_h2_prices = h2_price_hourly.query('RRR == @region and Y == @year').pivot_table(index=['SSS', 'TTT'], values='Value')
+                    # print('Price in those hours: ', regional_h2_prices.loc[fuellcell_production_hours])
+                    
+                    h2_fuelcell_meanprice = regional_h2_prices.loc[fuellcell_production_hours, 'Value'].mean()
+                    mc_cost += h2_fuelcell_meanprice # increment marginal cost of fuelcell with hydrogen price at consumption hours
+                    
+                    print('Average price of hydrogen when fuel cell is producing:', round(h2_fuelcell_meanprice), 'eur/MWh')
                 
-                        # Efficiency 
-                        generator = '{reg}%{virtual_node}'.format(reg='z_h2_c3_' + region.lower(), virtual_node='z_taking')
-                        for section in bc_config.sections():
-                            if generator in bc_config.options(section):
-                                # print('%s is in section %s'%(generator, section))
-                                # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                                bc_config.set(section, generator, '-' + str(round(eff, 6)))
-                                
-                                if tech_cap > 1e-5:
-                                    bc_config.set(section, 'enabled', 'true')
-                                else:
-                                    bc_config.set(section, 'enabled', 'false')
-                
+                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'marginal-cost', str(round(mc_cost)))
+                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'market-bid-cost', str(round(mc_cost)))
+
                 # Save capacity timeseries (assuming no outage!)
                 temp = pd.Series(np.ones(8760) * tech_cap).astype(int)
-                if bool(enabled):
+                if enabled == 'true':
+                    print(region, tech, fuel, '\nMarginal cost: %0.2f eur/MWh'%mc_cost, '\nCapacity: %0.2f MW'%tech_cap, '\nEfficiency: %0.2f pct\n'%(eff*100))
                     try:
                         temp.to_csv('Antares/input/thermal/series/%s/%s_%s/series.txt'%(region.lower(), tech.lower(), fuel.lower()), sep='\t', header=False, index=False)
                     
@@ -770,7 +775,8 @@ def peri_process(sc_name: str, year: str):
     """The processing of results from Balmorel to Antares
 
     Args:
-        sc_name (str): _description_
+        sc_name (str): Scenario name
+        year (str): Model year
     """
     print('\n|--------------------------------------------------|')   
     print('              PERI-PROCESSING')
