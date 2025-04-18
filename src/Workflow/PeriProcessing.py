@@ -3,14 +3,14 @@ Created on 30.03.2023 by
 @author: Mathias Berg Rosendal, PhD Student at DTU Management (Energy Economics & Modelling)
 
 IN ONE SENTENCE:
-Transfers results from Balmorel to Antares input
+Converts Balmorel results to Antares input
 
 ASSUMPTIONS IN SECTIONS:
-- 0.6 Dictionaries are hard-coded, based on current Antares/Balmorel set definitions
-      Country list assumes country key is the same for Balmorel+Antares, and that it's in the first 2 letters of the regions
 - 1.2 Peak production in VRE series = Peak capacity (but 5% loss inherent in profile, see Pre-Processing.py)
 - 4.3 Full transmission capacity available all hours 
-- 5.4 Constant hydrogen demand assumed
+
+OTHER:
+Read this script from the bottom and up to get an overview
 """
 #%% ------------------------------- ###
 ###       0. Script Settings        ###
@@ -574,12 +574,15 @@ def antares_exogenous_electricity_demand(electricity_profiles: pd.DataFrame,
         pd.DataFrame({'values' : profile}).to_csv('Antares/input/load/series/load_%s.txt'%(region.lower()), sep='\t', header=None, index=None)
 
 
-def antares_weekly_resource_constraints(ALLENDOFMODEL: gams.GamsDatabase,
+def antares_weekly_resource_constraints(
                                 A2B_regi: dict,
                                 B2A_ren: dict,
                                 BalmTechs: dict,
                                 year: str,
                                 GDATA: pd.DataFrame,
+                                GMAXF: pd.DataFrame,
+                                GMAXFS: pd.DataFrame,
+                                CCCRRR: pd.DataFrame,
                                 cap: pd.DataFrame):
     """Calculates residual demand profiles (electricity load - VRE profile)
     and uses this normalised series to factor on annual resource availability  
@@ -594,9 +597,6 @@ def antares_weekly_resource_constraints(ALLENDOFMODEL: gams.GamsDatabase,
         cap (pd.DataFrame): _description_
     """
 
-    GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
-    GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
-    CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
     CCCRRR['Done?'] = False
 
     # Load the stochastic years used 
@@ -856,7 +856,6 @@ def peri_process(sc_name: str):
 
     # Load results and data
     ws = gams.GamsWorkspace()
-    db0 = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC.replace('Iter%d'%i, 'Iter0')))
     ALLENDOFMODEL = ws.add_database_from_gdx(wk_dir + '/Balmorel/%s/model/all_endofmodel.gdx'%SC_folder)
     GDATA = symbol_to_df(ALLENDOFMODEL, 'GDATA', ['G', 'Par', 'Value']).groupby(by=['G', 'Par']).aggregate({'Value' : 'sum'})
     FDATA = symbol_to_df(ALLENDOFMODEL, 'FDATA', ['F', 'Type', 'Value']).groupby(by=['F', 'Type']).aggregate({'Value' : 'sum'})
@@ -864,7 +863,10 @@ def peri_process(sc_name: str):
     EMI_POL = symbol_to_df(ALLENDOFMODEL, 'EMI_POL', ['Y', 'C', 'Group', 'Par', 'Value']).groupby(by=['Y', 'C', 'Group', 'Par']).aggregate({'Value' : 'sum'})
     ANNUITYCG = symbol_to_df(ALLENDOFMODEL, 'ANNUITYCG', ['C', 'G', 'Value']).groupby(by=['C', 'G']).aggregate({'Value' : 'sum'})
     DISLOSSEL = symbol_to_df(ALLENDOFMODEL, 'DISLOSS_E', ['R', 'Value']).pivot_table(index='R', values='Value')
-    
+    GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
+    GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
+    CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
+    del ALLENDOFMODEL # Release some memory
 
     ## All input data (should have been loaded in initialisation)
     m = Balmorel('Balmorel')
@@ -874,9 +876,8 @@ def peri_process(sc_name: str):
     del m # release some memory
 
 
-    ### 0.6 Placeholders
+    # Loading Balmorel results
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
-    ### 0.7 Load MainResults
     db = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC))
 
 
@@ -892,22 +893,24 @@ def peri_process(sc_name: str):
                                             cap, i, year, fAntTechno)
 
     # Storage Capacities
-    fAntTechno = antares_storage_capacities(db, A2B_regi,
-                               cap, GDATA, ANNUITYCG,
-                               fAntTechno, i, year)            
+    fAntTechno = antares_storage_capacities(db, A2B_regi, 
+                                            cap, GDATA, ANNUITYCG,
+                                            fAntTechno, i, year)            
 
     # Transmission Capacities
     antares_transmission_capacities(db, A2B_regi,
                                     A2B_regi_h2, year)    
 
     # Exogenous Electricity Demand Profile
-    antares_exogenous_electricity_demand(electricity_profiles,
-                                 electricity_demand, DISLOSSEL, 
-                                 A2B_regi, year)
+    antares_exogenous_electricity_demand(electricity_profiles, 
+                                         electricity_demand, DISLOSSEL, 
+                                         A2B_regi, year)
 
     # Resource Constraints
-    antares_weekly_resource_constraints(ALLENDOFMODEL, A2B_regi, B2A_ren,
-                                BalmTechs, year, GDATA, cap)
+    antares_weekly_resource_constraints(A2B_regi, B2A_ren,
+                                        BalmTechs, year, 
+                                        GDATA, GMAXF, GMAXFS,
+                                        CCCRRR, cap)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')
