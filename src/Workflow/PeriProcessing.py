@@ -22,7 +22,7 @@ from pandas.errors import EmptyDataError
 import numpy as np
 import matplotlib.pyplot as plt
 import gams
-import platform
+import pathlib
 import click
 import os
 import pickle
@@ -766,7 +766,7 @@ def antares_weekly_resource_constraints(
         CCCRRR.loc[country, 'Done?'] = True
 
 
-def peri_process(sc_name: str):
+def peri_process(sc_name: str, year: str):
     """The processing of results from Balmorel to Antares
 
     Args:
@@ -776,8 +776,8 @@ def peri_process(sc_name: str):
     print('              PERI-PROCESSING')
     print('|--------------------------------------------------|\n') 
     
-    OS = platform.platform().split('-')[0] # Assuming that linux will be == HPC!
-
+    # Metadata
+    
     if sc_name == None: 
         # Otherwise, read config from top level
         print('Reading SC from Config.ini..') 
@@ -785,12 +785,12 @@ def peri_process(sc_name: str):
         Config.read('Config.ini')
         sc_name = Config.get('RunMetaData', 'SC')
 
-    ### 0.0 Load configuration file
+    ## Configuration file
     Config = configparser.ConfigParser()
     Config.read('Workflow/MetaResults/%s_meta.ini'%sc_name)
     SC_folder = Config.get('RunMetaData', 'SC_Folder')
     
-    # Plot settings
+    ## Plot settings
     style = Config.get('Analysis', 'plot_style')
     if style == 'report':
         plt.style.use('default')
@@ -799,64 +799,49 @@ def peri_process(sc_name: str):
         plt.style.use('dark_background')
         fc = 'none'
 
-    # 0.2 Checking if running this script by itself
-    if __name__ == '__main__':
-        test_mode = 'Y' # Set to N if you're running iterations
-        print('\n----------------------------\n\n        Test mode ON\n\n----------------------------\n')
-        wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))  
-        year = '2050' 	# Manual testing
-
-    else:
-        test_mode = 'N'
-        wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))  
-
-    ant_study = '/Antares' # the specific antares study
-    
-    ### Iteration Data
+    ## Iteration Data
     i = Config.getint('RunMetaData', 'CurrentIter')
     
-    ### Scenario
+    ## Scenario
     SC = sc_name + '_Iter%d'%i 
 
-    # 0.3 Technologies transfered from Balmorel, with marginal costs
-    with open(wk_dir + '/Pre-Processing/Output/BalmTechs.pkl', 'rb') as f:
+
+
+    # Dictionaries for Balmorel/Antares set translation
+
+    ## Technologies transfered from Balmorel, with marginal costs
+    with open('Pre-Processing/Output/BalmTechs.pkl', 'rb') as f:
         BalmTechs = pickle.load(f)
 
-    with open(wk_dir + '/Workflow/OverallResults/%s_AT.pkl'%sc_name, 'rb') as f:
+    with open('Workflow/OverallResults/%s_AT.pkl'%sc_name, 'rb') as f:
         fAntTechno = pickle.load(f)
 
-    ### 0.4 Dictionaries for Balmorel/Antares set translation
-
-    # Renewables
+    ## Renewable name mappings
     B2A_ren = {'SOLAR-PV' : 'photovoltaics',
                 'WIND-ON' : 'onshore',
                 'WIND-OFF' : 'offshore'}
 
-    # Regions
-    with open(wk_dir + '/Pre-Processing/Output/B2A_regi.pkl', 'rb') as f:
-        B2A_regi = pickle.load(f)
-    
-    with open(wk_dir + '/Pre-Processing/Output/A2B_regi.pkl', 'rb') as f:
+    ## Region mappings
+    with open('Pre-Processing/Output/A2B_regi.pkl', 'rb') as f:
         A2B_regi = pickle.load(f)
 
-    with open(wk_dir + '/Pre-Processing/Output/A2B_regi_h2.pkl', 'rb') as f:
+    with open('Pre-Processing/Output/A2B_regi_h2.pkl', 'rb') as f:
         A2B_regi_h2 = pickle.load(f)
 
-
-    # Countries
-    C = pd.Series(list(B2A_regi.keys())).str[:2].unique()
-
-    # Weights
-    with open(wk_dir + '/Pre-Processing/Output/B2A_DE_weights.pkl', 'rb') as f:
-        B2A_DE_weights = pickle.load(f) # Electricity
-
-
-    # Base factor on fictive electricity demand 
-    fict_de_factor = 1
-
+    
     # Load results and data
+    
+    ## All input data (should have been loaded in initialisation)
+    m = Balmorel('Balmorel')
+    m.load_incfiles(SC_folder)
+    electricity_demand = symbol_to_df(m.input_data[SC_folder], 'DE')
+    electricity_profiles = symbol_to_df(m.input_data[SC_folder], 'DE_VAR_T')
+    del m # release some memory
+
+    ## Input data from the latest run    
     ws = gams.GamsWorkspace()
-    ALLENDOFMODEL = ws.add_database_from_gdx(wk_dir + '/Balmorel/%s/model/all_endofmodel.gdx'%SC_folder)
+    all_endofmodel_path = pathlib.Path('Balmorel/%s/model/all_endofmodel.gdx'%SC_folder)
+    ALLENDOFMODEL = ws.add_database_from_gdx(str(all_endofmodel_path.resolve()))
     GDATA = symbol_to_df(ALLENDOFMODEL, 'GDATA', ['G', 'Par', 'Value']).groupby(by=['G', 'Par']).aggregate({'Value' : 'sum'})
     FDATA = symbol_to_df(ALLENDOFMODEL, 'FDATA', ['F', 'Type', 'Value']).groupby(by=['F', 'Type']).aggregate({'Value' : 'sum'})
     FPRICE = symbol_to_df(ALLENDOFMODEL, 'FUELPRICE1', ['Y', 'R', 'F', 'Value']).groupby(by=['Y', 'R', 'F']).aggregate({'Value' : 'sum'})
@@ -866,19 +851,14 @@ def peri_process(sc_name: str):
     GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
     GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
     CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
-    del ALLENDOFMODEL # Release some memory
-
-    ## All input data (should have been loaded in initialisation)
-    m = Balmorel('Balmorel')
-    m.load_incfiles(SC_folder)
-    electricity_demand = symbol_to_df(m.input_data[SC_folder], 'DE')
-    electricity_profiles = symbol_to_df(m.input_data[SC_folder], 'DE_VAR_T')
-    del m # release some memory
+    del ALLENDOFMODEL, ws # Release some memory
 
 
-    # Loading Balmorel results
+    ## Loading MainResults
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
-    db = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s.gdx"%(SC_folder, SC))
+    ws = gams.GamsWorkspace()
+    mainresults_path = pathlib.Path('Balmorel/%s/model/MainResults_%s.gdx'%(SC_folder, SC))
+    db = ws.add_database_from_gdx(str(mainresults_path.resolve()))
 
 
     # Renewable Capacities
@@ -921,10 +901,11 @@ def peri_process(sc_name: str):
         f.write('True')
 
 @click.command()
-@click.option('--sc-name', type=str, default=None, help="Scenario name")
-def main(sc_name: str):
+@click.argument('scenario', type=str)
+@click.argument('year', type=str)
+def main(scenario: str, year: str):
     try:
-        peri_process(sc_name)
+        peri_process(scenario, year)
         
     except Exception as e:
         # If there's an error, we still want to signal that we are finished occupying the Antares compilation
