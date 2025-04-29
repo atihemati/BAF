@@ -23,6 +23,7 @@ antares = "cd src && 'C:\\Program Files\\RTE\\Antares\\8.7.0\\bin\\antares-8.7-s
 zip-data = "cd src && Jobs/zip_data.bat"
 
 [dependencies]
+python = "==3.12.9"
 snakemake-minimal = ">=9.1.7,<10"
 matplotlib = ">=3.10.0"
 pandas = ">=2.2.3"
@@ -32,7 +33,6 @@ scipy = ">=1.15.2"
 plotly = ">=6.0.0"
 click = ">=8.1.8"
 numpy = ">=2.2.3"
-python = ">=3.12.9"
 tsam = ">=2.3.6"
 
 [pypi-dependencies]

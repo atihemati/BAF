@@ -56,20 +56,15 @@ USE_MARKETVAL = Config.getboolean('PostProcessing', 'Marketvalue') | Config.getb
 USE_FICTDEM   = Config.getboolean('PostProcessing', 'Fictivedem')
 USE_CAPCRED   = Config.getboolean('PostProcessing', 'Capacitycredit')
 USE_H2CAPCRED   = Config.getboolean('PostProcessing', 'H2Capacitycredit')
-USE_ANTARESDATA = Config.getboolean('PeriProcessing', 'UseAntaresData')
 USE_FLEXDEM = Config.getboolean('PeriProcessing', 'UseFlexibleDemand')
 
 BalmOpts = {'MARKETVAL' : USE_MARKETVAL,
             'FICTDEM' : USE_FICTDEM,
             'CAPCRED' : USE_CAPCRED,
             'H2CAPCRED' : USE_H2CAPCRED,
-            'USEANTARESDATA' : USE_ANTARESDATA,
             'FLEXDEM' : USE_FLEXDEM
             }
 BalmCmds = ['--%s=%s'%(key, 'yes') for key in BalmOpts.keys() if BalmOpts[key]]
-# Remember the correct aggregation options
-if USE_ANTARESDATA:
-  BalmCmds = BalmCmds + ['--AGGR1=yes', '--AGGR2=yes', '--ADJUSTHYDRO=yes']
 
 # Figure out operating system
 OS = platform.platform().split('-')[0] # Assuming that linux will be == HPC!
@@ -78,8 +73,8 @@ OS = platform.platform().split('-')[0] # Assuming that linux will be == HPC!
 wk_dir = os.path.dirname(os.path.realpath(__file__)) 
 # On HPC (assuming linux = HPC)
 if OS == 'Linux':
-  gams_path = "/appl/gams/37.1.0"
-  antares_path = r'/zhome/c0/2/105719/Desktop/Antares-8.6.1/bin'
+  gams_path = "/appl/gams/47.6.0"
+  antares_path = r'/zhome/c0/2/105719/Desktop/Antares-8.7.0/bin'
 # On desktop PC
 else:
   gams_path = r"C:\GAMS\45"
