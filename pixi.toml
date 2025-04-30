@@ -22,6 +22,9 @@ balmorel = "cd src/Balmorel/base/model && cmd /c C:\\GAMS\\47\\gams Balmorel"
 antares = "cd src && 'C:\\Program Files\\RTE\\Antares\\8.7.0\\bin\\antares-8.7-solver' Antares -n "
 zip-data = "cd src && Jobs/zip_data.bat"
 
+[target.linux.tasks]
+zip-data = "cd src && Jobs/zip_data.sh"
+
 [dependencies]
 python = "==3.12.9"
 snakemake-minimal = ">=9.1.7,<10"
