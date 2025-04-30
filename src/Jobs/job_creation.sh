@@ -31,10 +31,6 @@
 ### Load modules and find binaries
 module load R/4.2.3-mkl2023update2
 
-### Load python environment
-# source ~/miniconda3/bin/activate BAF
-~/.pixi/bin/pixi shell
-
 ### Get paths to binaries and Python-API for GAMS
 export PATH=/zhome/c0/2/105719/Desktop/Antares-8.7.0/bin:$PATH
 export PATH=/appl/gams/47.6.0:$PATH
@@ -44,7 +40,7 @@ for name in Scenario; do
     # mv Config_${name}.ini "Config.ini"
 
     # Running Master
-    python Master.py
+    ~/.pixi/bin/pixi run python Master.py
 
     # Running Balmorel 
     #cd Balmorel/Scenario/model 
