@@ -181,6 +181,8 @@ def set_cluster_attribute(name: str, attribute: str, value: any,
     discharge_config.clear()
 
 def create_transmission_input(wk_dir, ant_study, area_from, area_to, trans_cap, hurdle_costs):
+    area_from = area_from.lower()
+    area_to = area_to.lower()
     try: 
         f = open(wk_dir+ant_study + '/input/links/%s/%s_parameters.txt'%(area_from, area_to))
         p = wk_dir+ant_study + '/input/links/%s/%s_parameters.txt'%(area_from, area_to)
