@@ -71,13 +71,12 @@ OS = platform.platform().split('-')[0] # Assuming that linux will be == HPC!
 
 ### 0.2 Find Directories 
 wk_dir = os.path.dirname(os.path.realpath(__file__)) 
+gams_path = Config.get('RunMetaData', 'gams_system_directory')
 # On HPC (assuming linux = HPC)
 if OS == 'Linux':
-  gams_path = "/appl/gams/47.6.0"
   antares_path = r'/zhome/c0/2/105719/Desktop/Antares-8.7.0/bin'
 # On desktop PC
 else:
-  gams_path = r"C:\GAMS\45"
   antares_path = r'C:\Program Files\RTE\Antares\8.6.1\bin'
 
 ### 0.3 logging
@@ -128,7 +127,7 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
     os.chdir(wk_dir + '/Balmorel/%s/model'%SC_folder)
     # On HPC
     if OS == 'Linux':
-      balm_cmd = ['gams', 'Balmorel.gms', '--scenario_name=%s_Iter%d'%(SC, i), 'threads=$LSB_DJOB_NUMPROC'] + BalmCmds # For HPC
+      balm_cmd = ['gams', 'Balmorel.gms', '--scenario_name=%s_Iter%d'%(SC, i), 'threads=20'] + BalmCmds # For HPC
     # On Desktop
     else:
       balm_cmd = gams_path + '/gams "Balmorel.gms" --scenario_name=%s_Iter%d '%(SC, i) + ' '.join(BalmCmds)
