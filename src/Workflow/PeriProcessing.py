@@ -27,7 +27,7 @@ import click
 import os
 import pickle
 import configparser
-from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
+from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
 

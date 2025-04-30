@@ -168,8 +168,7 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
       break
     
     t_start = time()
-    out = run_module('Workflow.PeriProcessing', init_globals={'year' : str(year),
-                                                               'SC_name' : SC})        
+    peri_process(SC, str(year))
     sys.stdout.flush()
     t_stop = time()
     log_process_time('Workflow/OverallResults/%s_ProcessTime.csv'%SC, 
@@ -178,9 +177,9 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
     ### 2.3 Run Antares
     ant_run_name = '%s_Iter%d_Y-%d'%(SC, i, year)
     if OS == 'Linux':
-        ant_cmd = ['antares-8.6-solver', 'Antares', '-n', ant_run_name, '--parallel'] # Notice: No name in this case!
+        ant_cmd = ['antares-8.7-solver', 'Antares', '-n', ant_run_name, '--parallel'] # Notice: No name in this case!
     else:
-        ant_cmd = '"' + antares_path + '/antares-8.6-solver" -i "Antares" -n %s'%ant_run_name + ' --parallel'
+        ant_cmd = '"' + antares_path + '/antares-8.7-solver" -i "Antares" -n %s'%ant_run_name + ' --parallel'
     
     t_start = time()
     if test_mode:
