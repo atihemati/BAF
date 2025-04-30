@@ -24,6 +24,7 @@ from pybalmorel import IncFile, Balmorel
 
 Config = configparser.ConfigParser()
 Config.read('Config.ini')
+gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
         
 if not('SC' in locals()):
     try:
@@ -255,7 +256,7 @@ f.save()
 
 ### 1.4 Load input data
 print('\nLoading input data of Balmorel/%s/model...\n'%SC_folder)
-m = Balmorel('Balmorel')
+m = Balmorel('Balmorel', gams_system_directory=gams_system_directory)
 m.load_incfiles(SC_folder, overwrite=True)
 del m
 
