@@ -31,13 +31,13 @@ def get_mac_curve(x: np.array, y: np.array):
         if i == 0:
             # Fill the first values
             if small_number_to_zero(row['y']) != 0:
-                fit_x.append(small_number_to_zero(row['x']))
+                fit_x.append(small_number_to_zero(row['x'])+1e-3)
                 fit_y.append(0)
             fit_x.append(small_number_to_zero(row['x']))
             fit_y.append(small_number_to_zero(row['y']))
         elif row['y'] > fit_y[-1]:
             # Add higher y at lower x as a stepwise linear function
-            fit_x.append(small_number_to_zero(row['x']))
+            fit_x.append(small_number_to_zero(row['x'])+1e-3)
             fit_y.append(fit_y[-1])
             fit_x.append(small_number_to_zero(row['x']))
             fit_y.append(small_number_to_zero(row['y']))
@@ -77,16 +77,20 @@ def combine_step_curves(x1, y1, x2, y2):
         combined_x, combined_y: Coordinates of the combined step curve
     """
     # Combine and sort all unique x-coordinates
-    all_x = np.concatenate([x1, x2]).unique()
+    all_x = np.unique(np.concatenate([x1, x2]))
     all_x[::-1].sort() # Sort descending
     
     # Initialize arrays for combined curve
-    combined_x = all_x
+    combined_x = []
     combined_y = []
     
     # Evaluate the first curve at all x points
-    for i, x0 in enumerate(combined_x):
-        combined_y[i] += find_closest_x(x0, x1, y1) + find_closest_x(x0, x2, y2) 
+    for i, x0 in enumerate(all_x):
+        if i == 0:
+            combined_x.append(x0)
+            combined_y.append(combined_y[-1])
+        combined_x.append(x0)
+        combined_y.append(find_closest_x(x0, x1, y1) + find_closest_x(x0, x2, y2))
     
     return combined_x, combined_y
 
