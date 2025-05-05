@@ -183,7 +183,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/psutil-7.0.0-py312h66e93f0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pthread-stubs-0.4-hb9d3cd8_1002.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pulp-2.8.0-py312h7900ff3_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pwlf-2.5.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-2.22-pyh29332c3_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pydoe-0.3.8-py_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pyogrio-0.10.0-py312h02b19dd_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pyomo-6.9.1-py312h2ec8cdc_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyparsing-3.2.3-pyhd8ed1ab_1.conda
@@ -450,7 +452,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/psutil-7.0.0-py312h4389bb4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pthread-stubs-0.4-h0e40799_1002.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pulp-2.8.0-py312h2e8e312_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pwlf-2.5.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pycparser-2.22-pyh29332c3_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pydoe-0.3.8-py_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/win-64/pyogrio-0.10.0-py312h6e88f47_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pyomo-6.9.1-py312h275cf98_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyparsing-3.2.3-pyhd8ed1ab_1.conda
@@ -4851,6 +4855,20 @@ packages:
   sha256: 1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0
   requires_dist:
   - pytest ; extra == 'tests'
+- conda: https://conda.anaconda.org/conda-forge/noarch/pwlf-2.5.1-pyhd8ed1ab_0.conda
+  sha256: 5064f1385f92851634c4f5357a37c5c61f6afbef9e3ebcdbccdccedcf7c0efc4
+  md5: 28aac0b4eff864d25bc1479b12789069
+  depends:
+  - numpy >=1.14.0
+  - pydoe >=0.3.8
+  - python >=3.9
+  - scipy >=1.2.0
+  license: MIT
+  license_family: MIT
+  purls:
+  - pkg:pypi/pwlf?source=hash-mapping
+  size: 21464
+  timestamp: 1740377529050
 - pypi: https://files.pythonhosted.org/packages/ff/57/9d8281d633d66e3d84b7d6d9be8eb4b8234193fd33682cee0fc216cfeea9/pybalmorel-0.5.3.tar.gz
   name: pybalmorel
   version: 0.5.3
@@ -4875,6 +4893,18 @@ packages:
   purls: []
   size: 110100
   timestamp: 1733195786147
+- conda: https://conda.anaconda.org/conda-forge/noarch/pydoe-0.3.8-py_1.tar.bz2
+  sha256: 4616364442c3c0c91188ae8b04d3146f21e8826e55e120835d910844e4dbe38e
+  md5: 6aeffd34a05a050c9b01c86de859c459
+  depends:
+  - numpy >=1.8
+  - python
+  - scipy >=0.13
+  license: BSD 3-Clause
+  purls:
+  - pkg:pypi/pydoe?source=hash-mapping
+  size: 13421
+  timestamp: 1531166118644
 - pypi: https://files.pythonhosted.org/packages/8a/0b/9fcc47d19c48b59121088dd6da2488a49d5f72dacf8262e2790a1d2c7d15/pygments-2.19.1-py3-none-any.whl
   name: pygments
   version: 2.19.1
@@ -5682,6 +5712,8 @@ packages:
   - python >=3.8.0,<4.0.0
   license: MIT
   license_family: MIT
+  purls:
+  - pkg:pypi/snakemake-interface-common?source=hash-mapping
   size: 18489
   timestamp: 1728055352534
 - conda: https://conda.anaconda.org/bioconda/noarch/snakemake-interface-executor-plugins-9.3.5-pyhdfd78af_0.tar.bz2

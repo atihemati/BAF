@@ -2,7 +2,7 @@
 from pybalmorel import Balmorel
 import matplotlib.pyplot as plt
 import numpy as np
-from Workflow.Functions.piecewise_linear_fits import ConstrainedPiecewiseLinFit
+from pwlf import PiecewiseLinFit
 import copy
 
 m=Balmorel('Balmorel', gams_system_directory='/appl/gams/47.6.0')
@@ -31,25 +31,16 @@ for season in seasons:
     temp.loc[season].plot(kind='scatter', x='Value', y=tech, ax=ax, 
                           label=season, color=colors[season])
     
-    fits, r_squared = [], []
-    for segments in np.arange(2,3):
-        print(temp.loc[season, 'Value'].values)
-        # Piecewise linear fit
-        fitting = ConstrainedPiecewiseLinFit(temp.loc[season, 'Value'].values,
-                                            temp.loc[season, tech].values)
-                                    
-        # Amount of segments and fit
-        fitting.fit(segments, allow_discontinuities=False)
-        
-        # Store results
-        r_squared.append(fitting.r_squared())
-        fits.append(copy.deepcopy(fitting))
+# Piecewise linear fit
+fitting = PiecewiseLinFit(temp.loc[:, 'Value'].values.flatten(),
+                                temp.loc[:, tech].values.flatten())
+                                #    disp_res=True)          
+                                
+# Amount of segments and fit
+fitting.fit(2)
 
-    # Find best fit
-    best_fit_index = r_squared.index(max(r_squared))
-
-    x = np.linspace(0, max(temp.loc[season, 'Value'])*1.1)
-    ax.plot(x, fits[best_fit_index].predict(x), linestyle='--', color=colors[season])
+x = np.linspace(0, max(temp.loc[season, 'Value'])*1.1)
+ax.plot(x, fitting.predict(x), linestyle='--', color=colors[season])
     
 ax.set_ylabel(f'{tech} (MWh)')
 ax.set_xlabel('Electricity Price (€/MWh)')
