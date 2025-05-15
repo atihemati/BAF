@@ -1,7 +1,5 @@
 """
-Piecewise Linear Fitting Functions
-
-Monotonically decreasing piecewise linear fitting functions, one continuous and one discontinuous.
+Building Supply Curves of Balmorel Results
 
 Created on 02.05.2025
 @author: Mathias Berg Rosendal, PhD Student at DTU Management (Energy Economics & Modelling) and claude.ai 
@@ -125,70 +123,83 @@ def combine_multiple_supply_curves(x_list, y_list):
     
     return combined_x, combined_y
 
-# Example usage:
 if __name__ == "__main__":
+    
+    # Example usage for one scenario
+    scenario = 'baf_test_Iter0'
+
+    # Create a color dictionary for seasons
+    colors = {}
+    num_seasons = 52
+    for i in range(1, num_seasons + 1):
+        # Calculate how far we are from the midpoint (S26)
+        # This gives a value between 0 (at S26) and 1 (at S01 or S52)
+        distance_from_mid = abs(i - (num_seasons / 2 + 0.5)) / (num_seasons / 2)
         
-    m=Balmorel('Balmorel', gams_system_directory='/appl/gams/47.6.0')
+        # Red component: max at midpoint, min at endpoints
+        red = 1.0 - distance_from_mid
+        # Black components: min at midpoint, max at endpoints
+        black = distance_from_mid
+        
+        season_key = f'S{i:02d}'
+        colors[season_key] = [red, 0, 0, 0.5]  # Red component varies, others fixed
+
+    m=Balmorel('Balmorel')
     m.collect_results()
-
-    scenario = 'base'
-    area = 'DE_A'
-    tech = 'GNR_BO_ELEC_E-80'
-    tech = 'GNR_BO_ELEC_E-99_LS-10-MW-FEED_Y-2050'
-    commodity = 'HEAT'
-    commodity = 'HYDROGEN'
-    # tech = 'ENDO_H2'
-    # tech = 'ENDOGENOUS_ELECT2HEAT'
-
-    supply_curves_x, supply_curves_y = [], []
-
-    df1_temp = m.results.get_result('PRO_YCRAGFST')
-    df2_temp = m.results.get_result('EL_PRICE_YCRST')
-    for area in df1_temp.Area.unique():
-        df1=df1_temp.query('Scenario==@scenario and Area==@area and Fuel=="ELECTRIC" and Commodity==@commodity').pivot_table(index=['Season','Time'], columns='Generation', values='Value')
-
-        if 'region' in locals() and region != area[:2]:
-            print(supply_curves_x, supply_curves_y)
-            fig, ax = plt.subplots()
-            combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
-            print(combined_x, combined_y)
-            ax.plot(combined_x, combined_y)
-            ax.set_title('Supply Curve for %s in %s'%(commodity, region))
-            ax.set_ylabel('MWh')
-            ax.set_xlabel('€/MWh')
-            fig.savefig('supply_curve_%s_%s.png'%(commodity, region))
-            supply_curves_x, supply_curves_y = [], []
-        
-        region = area[:2]
-
-        for tech in df1.columns:
-            
-            # Skip if very low max production
-            if df1.loc[:, tech].max() < 1e-5:
-                continue
-            
-            # df1=m.results.get_result('EL_DEMAND_YCRST').query('Scenario=="base"').pivot_table(index=['Season','Time'], columns='Category', values='Value')
-            df2=df2_temp.query('Scenario==@scenario and Region==@region').pivot_table(index=['Season','Time'], values='Value')
-
-            temp=df1[[tech]].merge(df2[['Value']],left_index=True, right_index=True).fillna(0)
-
-            seasons = list(temp.index.get_level_values(0).unique())
-            colors = {season : [seasons.index(season)/len(seasons)*2, 0, 0, .7] for season in seasons[:int(round(len(seasons)/2))]} | {season : [1-(seasons.index(season)-len(seasons)/2)/len(seasons)*2, 0, 0, .7] for season in seasons[int(round(len(seasons)/2)):]}
-            fig, ax = plt.subplots()
-            
+    df1_temp = m.results.get_result('PRO_YCRAGFST').query('Scenario == @scenario')
+    df2_temp = m.results.get_result('EL_PRICE_YCRST').query('Scenario == @scenario')
+    
+    seasons = list(df1_temp.Season.unique())
+    seasons.sort()
+    
+    for commodity in ['HEAT', 'HYDROGEN']:  
+    
+        for region in df1_temp.Region.unique():
+                    
+            fig_season, ax_season = plt.subplots()
             for season in seasons:
-                temp.loc[season].plot(kind='scatter', x='Value', y=tech, ax=ax, 
-                                    label=season, color=colors[season])
             
-            # Piecewise linear fit
-            fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
-                                        temp.loc[:, tech].values.flatten())
-            supply_curves_x.append(fit_x)
-            supply_curves_y.append(fit_y)
+                supply_curves_x, supply_curves_y = [], []
                 
-            ax.plot(fit_x, fit_y)
-                
-            ax.set_ylabel(f'{tech} (MWh)')
-            ax.set_xlabel('Electricity Price (€/MWh)')
-            ax.set_title(area)
-            fig.savefig(f'eldempricecurve_{area}_{tech}.png', bbox_inches='tight')
+                for area in df1_temp.query('Region == @region').Area.unique():
+                    
+                    df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Commodity==@commodity and Season == @season').pivot_table(index='Time', columns='Generation', values='Value')
+
+                    for tech in df1.columns:
+                        
+                        # Skip if very low max production
+                        if df1.loc[:, tech].max() < 1e-5:
+                            continue
+                        
+                        # df1=m.results.get_result('EL_DEMAND_YCRST').query('Scenario=="base"').pivot_table(index=['Season','Time'], columns='Category', values='Value')
+                        df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @season').pivot_table(index='Time', values='Value')
+
+                        temp=df1[[tech]].merge(df2[['Value']],left_index=True, right_index=True).fillna(0)
+
+                        
+                        # fig, ax = plt.subplots()
+                        # for season in seasons:
+                        #     temp.loc[season].plot(kind='scatter', x='Value', y=tech, ax=ax, 
+                        #                         label=season, color=colors[season])
+                        
+                        # Piecewise linear fit
+                        fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
+                                                    temp.loc[:, tech].values.flatten())
+                        supply_curves_x.append(fit_x)
+                        supply_curves_y.append(fit_y)
+                            
+                        # ax.plot(fit_x, fit_y)
+                        # ax.set_ylabel(f'{tech} (MWh)')
+                        # ax.set_xlabel('Electricity Price (€/MWh)')
+                        # ax.set_title(area)
+                        # fig.savefig(f'eldempricecurve_{area}_{tech}.png', bbox_inches='tight')
+                        
+                if len(supply_curves_x) != 0:
+                    combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
+                    ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
+            
+            ax_season.set_title('Supply Curve for %s in %s'%(commodity, region))
+            ax_season.set_ylabel('MWh')
+            ax_season.set_xlabel('€/MWh')    
+            ax_season.legend()    
+            fig_season.savefig('Workflow/OverallResults/supply_curve_%s_%s.png'%(commodity, region))
