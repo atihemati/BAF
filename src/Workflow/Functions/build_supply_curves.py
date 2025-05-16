@@ -11,6 +11,7 @@ Created on 02.05.2025
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import pandas as pd
 from pybalmorel import Balmorel, MainResults
 
@@ -72,7 +73,7 @@ def seasonal_colors(num_seasons: int):
         black = distance_from_mid
         
         season_key = f'S{i:02d}'
-        colors[season_key] = [red, 0, 0, 0.5]  # Red component varies, others fixed
+        colors[season_key] = mcolors.to_hex([red, 0, 0, 0.5])  # Red component varies, others fixed. .to_hex used to avoid color map warning
     
     return colors
 
@@ -201,7 +202,7 @@ def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
                         supply_curves_x.append(fit_x)
                         supply_curves_y.append(fit_y)
                             
-                        # Plot fit to data points
+                        # Plot fit to data points for specific technology
                         if plot_all_curves:
                             fig, ax = plt.subplots()
                             temp.plot(kind='scatter', x='Value', y=tech, ax=ax, 
@@ -215,9 +216,11 @@ def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
                 if len(supply_curves_x) != 0:
                     combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
                     
+                    # Plot overall curve    
                     if plot_all_curves or plot_overall_curves:
                         ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
             
+            # Plot overall curve
             if plot_all_curves or plot_overall_curves:
                 ax_season.set_title('Supply Curve for %s in %s'%(commodity, region))
                 ax_season.set_ylabel('MWh')
