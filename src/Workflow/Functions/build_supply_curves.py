@@ -12,7 +12,7 @@ Created on 02.05.2025
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from pybalmorel import Balmorel
+from pybalmorel import Balmorel, MainResults
 
 def get_supply_curve(x: np.array, y: np.array):
     
@@ -52,6 +52,29 @@ def small_number_to_zero(number: float):
     if number < 1e-6:
         number = 0
     return number
+
+def seasonal_colors(num_seasons: int):
+    """Create colors for all S01-SNM seasons, that are more red in the middle
+
+    Args:
+        num_seasons (int): Amount of seasons
+    """
+
+    colors = {}
+    for i in range(1, num_seasons + 1):
+        # Calculate how far we are from the midpoint (S26)
+        # This gives a value between 0 (at S26) and 1 (at S01 or S52)
+        distance_from_mid = abs(i - (num_seasons / 2 + 0.5)) / (num_seasons / 2)
+        
+        # Red component: max at midpoint, min at endpoints
+        red = 1.0 - distance_from_mid
+        # Black components: min at midpoint, max at endpoints
+        black = distance_from_mid
+        
+        season_key = f'S{i:02d}'
+        colors[season_key] = [red, 0, 0, 0.5]  # Red component varies, others fixed
+    
+    return colors
 
 def find_closest_x(x0: float, xp: np.array, yp: np.array):
     try:
@@ -123,34 +146,30 @@ def combine_multiple_supply_curves(x_list, y_list):
     
     return combined_x, combined_y
 
-if __name__ == "__main__":
-    
-    # Example usage for one scenario
-    scenario = 'baf_test_Iter0'
+def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
+                        plot_all_curves: bool = False):
+    """Create seasonal curves for hydrogen and heat for every region in a scenario 
 
-    # Create a color dictionary for seasons
-    colors = {}
-    num_seasons = 52
-    for i in range(1, num_seasons + 1):
-        # Calculate how far we are from the midpoint (S26)
-        # This gives a value between 0 (at S26) and 1 (at S01 or S52)
-        distance_from_mid = abs(i - (num_seasons / 2 + 0.5)) / (num_seasons / 2)
-        
-        # Red component: max at midpoint, min at endpoints
-        red = 1.0 - distance_from_mid
-        # Black components: min at midpoint, max at endpoints
-        black = distance_from_mid
-        
-        season_key = f'S{i:02d}'
-        colors[season_key] = [red, 0, 0, 0.5]  # Red component varies, others fixed
+    Args:
+        scenario (str): Scenario to analyse
+        plot_overall_curvess (bool, optional): Plot regional heat and hydrogen supply curves?
+        plot_all_curves (bool, optional): Plot stepfunction fit of ALL technologies and regional heat and hydrogen supply curves?
+    """
 
     m=Balmorel('Balmorel')
-    m.collect_results()
-    df1_temp = m.results.get_result('PRO_YCRAGFST').query('Scenario == @scenario')
-    df2_temp = m.results.get_result('EL_PRICE_YCRST').query('Scenario == @scenario')
+    m.locate_results()
+    m.files
+    res = MainResults('MainResults_' + scenario + '.gdx',
+                      paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model')
+    
+    df1_temp = res.get_result('PRO_YCRAGFST')
+    df2_temp = res.get_result('EL_PRICE_YCRST')
     
     seasons = list(df1_temp.Season.unique())
     seasons.sort()
+    if plot_all_curves or plot_overall_curves:
+        # Create a color dictionary for seasons
+        colors = seasonal_colors(52)
     
     for commodity in ['HEAT', 'HYDROGEN']:  
     
@@ -176,30 +195,40 @@ if __name__ == "__main__":
 
                         temp=df1[[tech]].merge(df2[['Value']],left_index=True, right_index=True).fillna(0)
 
-                        
-                        # fig, ax = plt.subplots()
-                        # for season in seasons:
-                        #     temp.loc[season].plot(kind='scatter', x='Value', y=tech, ax=ax, 
-                        #                         label=season, color=colors[season])
-                        
                         # Piecewise linear fit
                         fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
                                                     temp.loc[:, tech].values.flatten())
                         supply_curves_x.append(fit_x)
                         supply_curves_y.append(fit_y)
                             
-                        # ax.plot(fit_x, fit_y)
-                        # ax.set_ylabel(f'{tech} (MWh)')
-                        # ax.set_xlabel('Electricity Price (€/MWh)')
-                        # ax.set_title(area)
-                        # fig.savefig(f'eldempricecurve_{area}_{tech}.png', bbox_inches='tight')
+                        # Plot fit to data points
+                        if plot_all_curves:
+                            fig, ax = plt.subplots()
+                            temp.plot(kind='scatter', x='Value', y=tech, ax=ax, 
+                                        label=season, color=colors[season])
+                            ax.plot(fit_x, fit_y)
+                            ax.set_ylabel(f'{tech} (MWh)')
+                            ax.set_xlabel('Electricity Price (€/MWh)')
+                            ax.set_title(area)
+                            fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{season}.png', bbox_inches='tight')
                         
                 if len(supply_curves_x) != 0:
                     combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
-                    ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
+                    
+                    if plot_all_curves or plot_overall_curves:
+                        ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
             
-            ax_season.set_title('Supply Curve for %s in %s'%(commodity, region))
-            ax_season.set_ylabel('MWh')
-            ax_season.set_xlabel('€/MWh')    
-            ax_season.legend()    
-            fig_season.savefig('Workflow/OverallResults/supply_curve_%s_%s.png'%(commodity, region))
+            if plot_all_curves or plot_overall_curves:
+                ax_season.set_title('Supply Curve for %s in %s'%(commodity, region))
+                ax_season.set_ylabel('MWh')
+                ax_season.set_xlabel('€/MWh')    
+                ax_season.legend()    
+                fig_season.savefig('Workflow/OverallResults/supply_curve_%s_%s.png'%(commodity, region))
+
+if __name__ == "__main__":
+    
+    # Example usage for one scenario
+    scenario = 'baf_test_Iter0'
+    plot = True
+
+    get_seasonal_curves(scenario, plot_overall_curves=True)
