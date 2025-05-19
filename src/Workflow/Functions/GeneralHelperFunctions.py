@@ -481,6 +481,41 @@ class AntaresOutput:
             # print('No mc-year results')
             return 0
 
+
+class AntaresInput:
+    
+    def __init__(self, folder_name: str='Antares', wk_dir: str='.'):
+        # Set path to result
+        self.path = os.path.join(wk_dir, folder_name, 'input')
+        self.wk_dir = wk_dir
+        
+        # Thermal Cluster Data
+        self.thermal_cluster = {}
+        for area in os.listdir(os.path.join(self.path, 'thermal/clusters')):
+            self.thermal_cluster[area] = {}
+            self.thermal_cluster[area]['ini'] = os.path.join(self.path, 'thermal/clusters', area, 'list.ini')
+            self.thermal_cluster[area]['series'] = os.path.join(self.path, 'thermal/series', area)
+            
+            config = configparser.ConfigParser()
+            config.read(self.thermal_cluster[area]['ini'])
+            self.thermal_cluster[area]['clusters'] = config.sections()
+
+    def thermal(self, area: str, series: bool = False, cluster_name: str = None):
+        
+        area = area.lower()
+        cluster_name = cluster_name.lower()
+        if not(series):
+            output = configparser.ConfigParser()
+            output.read(self.thermal_cluster[area]['ini'])
+        else:
+            output = pd.read_table(os.path.join(
+                self.thermal_cluster[area]['series'],
+                cluster_name,
+                'series.txt'
+            ), header=None)
+
+        return output
+
 def convert_int_to_mc_year(mc_year: int):
     # Make mc_year into correct format
     mc_year = ''.join(['0' for i in range(5-len(str(mc_year)))]) + str(mc_year) 
