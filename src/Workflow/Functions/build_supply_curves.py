@@ -207,6 +207,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
                         # Piecewise linear fit
                         fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
                                                     temp.loc[:, tech].values.flatten())
+                        
                         supply_curves_x.append(fit_x)
                         supply_curves_y.append(fit_y)
                             
@@ -229,8 +230,8 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
                         ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
     
                 # Store seasonal curves   
-                resulting_curves[commodity][region][season] = {'price' : supply_curves_x,
-                                                                'capacity' : supply_curves_y}
+                resulting_curves[commodity][region][season] = {'price' : np.round(combined_x),
+                                                                'capacity' : np.round(combined_y)}
     
     
             # Plot overall curve
