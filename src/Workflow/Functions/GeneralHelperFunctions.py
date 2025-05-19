@@ -490,15 +490,19 @@ class AntaresInput:
         self.wk_dir = wk_dir
         
         # Thermal Cluster Data
-        self.thermal_cluster = {}
+        self.thermal_clusters = {}
+        self.path_thermal_clusters = {}
+        self.path_load = {}
         for area in os.listdir(os.path.join(self.path, 'thermal/clusters')):
-            self.thermal_cluster[area] = {}
-            self.thermal_cluster[area]['ini'] = os.path.join(self.path, 'thermal/clusters', area, 'list.ini')
-            self.thermal_cluster[area]['series'] = os.path.join(self.path, 'thermal/series', area)
+            self.path_thermal_clusters[area] = {}
+            self.path_thermal_clusters[area]['ini'] = os.path.join(self.path, 'thermal/clusters', area, 'list.ini')
+            self.path_thermal_clusters[area]['series'] = os.path.join(self.path, 'thermal/series', area)
+            self.path_thermal_clusters[area]['prepro'] = os.path.join(self.path, 'thermal/prepro', area)
+            self.path_load[area] = os.path.join(self.path, 'load/series', f'load_{area}.txt')
             
             config = configparser.ConfigParser()
-            config.read(self.thermal_cluster[area]['ini'])
-            self.thermal_cluster[area]['clusters'] = config.sections()
+            config.read(self.path_thermal_clusters[area]['ini'])
+            self.thermal_clusters[area] = config.sections()
 
     def thermal(self, area: str, series: bool = False, cluster_name: str = None):
         
@@ -506,15 +510,137 @@ class AntaresInput:
         cluster_name = cluster_name.lower()
         if not(series):
             output = configparser.ConfigParser()
-            output.read(self.thermal_cluster[area]['ini'])
+            output.read(self.path_thermal_clusters[area]['ini'])
         else:
             output = pd.read_table(os.path.join(
-                self.thermal_cluster[area]['series'],
+                self.path_thermal_clusters[area]['series'],
                 cluster_name,
                 'series.txt'
             ), header=None)
 
         return output
+
+    def load(self, area: str):
+        """Read the load timeseries of an area
+
+        Args:
+            area (str): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        area = area.lower()
+        output = pd.read_table(self.path_load[area], header=None)
+        return output
+
+    def create_thermal(self, 
+                       area: str,
+                       cluster_name: str,
+                       fuel: str, 
+                       enabled: bool = False, 
+                       capacity: float = 0,
+                       marginal_cost: float = 0):
+        """Creates a new cluster in area. 
+        Note that if a cluster already exists with this name,
+        its data be overwritten.
+        
+
+        Args:
+            area (str): _description_
+            cluster_name (str): _description_
+            fuel (str): _description_
+            enabled (bool, optional): _description_. Defaults to False.
+            capacity (float, optional): _description_. Defaults to 0.
+            marginal_cost (float, optional): _description_. Defaults to 0.
+
+        Returns:
+            _type_: _description_
+        """
+        
+        cluster_name = cluster_name.lower()
+        area = area.lower()
+        fuel = fuel.lower()
+        
+        # Create section in .ini file
+        config = self.thermal(area, cluster_name=cluster_name)
+        try:
+            config.add_section(cluster_name)
+        except configparser.DuplicateSectionError:
+            config.remove_section(cluster_name)
+            config.add_section(cluster_name)
+            print(f'{cluster_name} already existed in {area}, overwriting')
+        
+        config.set(cluster_name, 'name', cluster_name)
+        config.set(cluster_name, 'group', fuel)
+        config.set(cluster_name, 'unitcount', '1')
+        config.set(cluster_name, 'co2', '0')
+        config.set(cluster_name, 'nh3', '0')
+        config.set(cluster_name, 'nmvoc', '0')
+        config.set(cluster_name, 'nox', '0')
+        config.set(cluster_name, 'op1', '0')
+        config.set(cluster_name, 'op2', '0')
+        config.set(cluster_name, 'op3', '0')
+        config.set(cluster_name, 'op4', '0')
+        config.set(cluster_name, 'op5', '0')
+        config.set(cluster_name, 'pm10', '0')
+        config.set(cluster_name, 'pm2_5', '0')
+        config.set(cluster_name, 'pm5', '0')
+        config.set(cluster_name, 'so2', '0')
+        if enabled:
+            config.set(cluster_name, 'nominalcapacity', str(capacity))
+            config.set(cluster_name, 'marginal-cost', str(marginal_cost))
+            config.set(cluster_name, 'market-bid-cost', str(marginal_cost))
+        else:
+            config.set(cluster_name, 'enabled', str(enabled).lower())        
+
+        with open(self.path_thermal_clusters[area]['ini'], 'w') as f:
+            config.write(f)    
+        
+        # Create other files
+        cluster_series_path = os.path.join(self.path_thermal_clusters[area]['series'], cluster_name)
+        if not(os.path.exists(cluster_series_path + '/../')):
+            make_directory_if_not_exist(cluster_series_path + '/../')
+        make_directory_if_not_exist(cluster_series_path)
+    
+        with open(os.path.join(cluster_series_path, 'CO2Cost.txt'), 'w') as f:
+            f.write('')
+        with open(os.path.join(cluster_series_path, 'fuelCost.txt'), 'w') as f:
+            f.write('')
+        with open(os.path.join(cluster_series_path, 'series.txt'), 'w') as f:
+            f.write("\n".join([str(capacity)]*8760))
+            f.write("\n")
+            
+        prepro_path = os.path.join(self.path_thermal_clusters[area]['prepro'], cluster_name)
+        if not(os.path.exists(prepro_path + '/../')):
+            make_directory_if_not_exist(prepro_path + '/../')
+        make_directory_if_not_exist(prepro_path)
+        with open(os.path.join(prepro_path, 'data.txt'), 'w') as f:
+            f.write("\n".join(["1\t1\t0\t0\t0\t0"]*365))
+            f.write('\n')
+        with open(os.path.join(prepro_path, 'modulation.txt'), 'w') as f:
+            f.write("\n".join(["1\t1\t1\t0"]*8760))
+            f.write('\n')
+            
+        return config, cluster_series_path, prepro_path
+
+    def purge_thermal_clusters(self, area: str):
+        """Will delete all thermal cluster data within an area
+
+        Args:
+            area (str): _description_
+        """
+        area = area.lower()
+        shutil.rmtree(self.path_thermal_clusters[area]['series'])
+        shutil.rmtree(self.path_thermal_clusters[area]['prepro'])
+        with open(self.path_thermal_clusters[area]['ini'], 'w') as f:
+            f.write('')
+            
+
+def make_directory_if_not_exist(path: str):
+    if os.path.exists(path):
+        print(f'{path} already existed')
+    else:
+        os.mkdir(path)
 
 def convert_int_to_mc_year(mc_year: int):
     # Make mc_year into correct format
