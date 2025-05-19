@@ -27,7 +27,8 @@ import click
 import os
 import pickle
 import configparser
-from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute
+from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
+from Functions.build_supply_curves import get_seasonal_curves
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
 
@@ -906,13 +907,73 @@ def peri_process(sc_name: str, year: str):
     with open('Workflow/MetaResults/periprocessing_finished.txt', 'w') as f:
         f.write('True')
 
+def create_demand_response(scenario: str, year: int):
+    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True)
+    antares_input = AntaresInput('Antares')
+    commodities = curves.keys()
+    for commodity in commodities:
+        
+        regions = curves[commodity].keys()
+        for region in regions:
+            
+            # Delete all thermal clusters in virtual region
+            virtual_area = f'{region}_{commodity}'.lower()
+            antares_input.purge_thermal_clusters(virtual_area)
+            
+            # Placeholder for availability and electricity to commodity load
+            availability = {}
+            load = np.zeros(8760)
+            
+            seasons = curves[commodity][region].keys()        
+            for season in seasons:
+                
+                temp = pd.DataFrame({'price' : curves[commodity][region][season]['price'],
+                                    'capacity' : curves[commodity][region][season]['capacity']},
+                                   index=np.arange(len(curves[commodity][region][season]['price'])))
+                
+                # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
+                diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
+                
+                # Create a cluster per price 
+                for price in [price for price in diff.index if price != 0]:
+                    
+                    # Get max capacity and initiate availability timeseries if it doesn't exist yet
+                    cluster_name = f'{price:.0f}_europermwh'
+                    if not(cluster_name in availability.keys()):
+                        availability[cluster_name] = np.zeros(8760)
+                        max_cap = diff.loc[price, 'capacity']
+                    elif availability[cluster_name].max() > diff.loc[price, 'capacity']:
+                        max_cap = availability[cluster_name].max()
+                    else:
+                        max_cap = diff.loc[price, 'capacity']
+                    
+                    config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
+                                                                                            True, max_cap, price)
+
+                    # Set availability
+                    week_nr = int(season.lstrip('S'))
+                    availability[cluster_name][(week_nr-1)*168:week_nr*168] = diff.loc[price, 'capacity']
+
+                    # Set load
+                    # load[(week_nr-1)*168:week_nr*168] += diff.query('price >= @price').loc[:, 'capacity'].sum()
+
+                load[(week_nr-1)*168:week_nr*168] = diff.loc[:, 'capacity'].sum()
+
+            # Save load and availability
+            with open(antares_input.path_load[virtual_area], 'w') as f:
+                f.write("\n".join(list(load.astype(str))))
+            
+            for cluster in availability.keys():
+                with open(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 'w') as f:
+                    f.write("\n".join(list(availability[cluster].astype(str))))
+
 @click.command()
 @click.argument('scenario', type=str)
 @click.argument('year', type=str)
 def main(scenario: str, year: str):
     try:
-        peri_process(scenario, year)
-        
+        # peri_process(scenario, year)
+        create_demand_response(scenario, year)
     except Exception as e:
         # If there's an error, we still want to signal that we are finished occupying the Antares compilation
         with open('Workflow/MetaResults/periprocessing_finished.txt', 'w') as f:

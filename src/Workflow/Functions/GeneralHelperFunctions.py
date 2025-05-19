@@ -621,6 +621,9 @@ class AntaresInput:
             f.write("\n".join(["1\t1\t1\t0"]*8760))
             f.write('\n')
             
+        # Append to the class cluster list
+        self.thermal_clusters[area].append(cluster_name)
+            
         return config, cluster_series_path, prepro_path
 
     def purge_thermal_clusters(self, area: str):
@@ -635,6 +638,7 @@ class AntaresInput:
         with open(self.path_thermal_clusters[area]['ini'], 'w') as f:
             f.write('')
             
+        self.thermal_clusters[area] = []
 
 def make_directory_if_not_exist(path: str):
     if os.path.exists(path):
