@@ -147,7 +147,7 @@ def combine_multiple_supply_curves(x_list, y_list):
     
     return combined_x, combined_y
 
-def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
+def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = False,
                         plot_all_curves: bool = False):
     """Create seasonal curves for hydrogen and heat for every region in a scenario 
 
@@ -164,8 +164,9 @@ def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
     res = MainResults('MainResults_' + scenario + '.gdx',
                       paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model')
     
-    df1_temp = res.get_result('PRO_YCRAGFST')
-    df2_temp = res.get_result('EL_PRICE_YCRST')
+    year = str(year)
+    df1_temp = res.get_result('PRO_YCRAGFST').query('Year == @year')
+    df2_temp = res.get_result('EL_PRICE_YCRST').query('Year == @year')
     
     # Prepare parameters to iterate through and colors for plotting them
     commodities = ['HEAT', 'HYDROGEN']
@@ -228,7 +229,7 @@ def get_seasonal_curves(scenario: str, plot_overall_curves: bool = False,
                         ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
     
                 # Store seasonal curves   
-                resulting_curves[commodity, region, season] = {'price' : supply_curves_x,
+                resulting_curves[commodity][region][season] = {'price' : supply_curves_x,
                                                                 'capacity' : supply_curves_y}
     
     
@@ -246,6 +247,6 @@ if __name__ == "__main__":
     
     # Example usage for one scenario
     scenario = 'baf_test_Iter0'
-    plot = True
+    year = 2050
 
-    resulting_curves = get_seasonal_curves(scenario, plot_overall_curves=True)
+    resulting_curves = get_seasonal_curves(scenario, year, plot_overall_curves=True)
