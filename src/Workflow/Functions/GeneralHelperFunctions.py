@@ -568,7 +568,7 @@ class AntaresInput:
         except configparser.DuplicateSectionError:
             config.remove_section(cluster_name)
             config.add_section(cluster_name)
-            print(f'{cluster_name} already existed in {area}, overwriting')
+            # print(f'{cluster_name} already existed in {area}, overwriting')
         
         config.set(cluster_name, 'name', cluster_name)
         config.set(cluster_name, 'group', fuel)
