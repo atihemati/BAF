@@ -20,104 +20,18 @@ from Functions.Formatting import newplot, set_style, stacked_bar
 from Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
 from Functions.antaresViz import stacked_plot
 
-### 0.0 Settings
-if not('SC' in locals()):
-    try:
-        # Try to read something from the command line
-        SC = sys.argv[1]
-    except:
-        # Otherwise, read config from top level
-        print('Reading SC from Config.ini..') 
-        Config = configparser.ConfigParser()
-        Config.read('Config.ini')
-        SC = Config.get('RunMetaData', 'SC')
 
-Config = configparser.ConfigParser()
-Config.read('Workflow/MetaResults/%s_meta.ini'%SC)
-SC_folder = Config.get('RunMetaData', 'SC_Folder')
-USE_CAPCRED   = Config.getboolean('PostProcessing', 'Capacitycredit')
-USE_H2CAPCRED   = Config.getboolean('PostProcessing', 'H2Capacitycredit')
-
-# Analysis Settings
-plotprofiles = 'n' # Choose whether to plot profiles or not
-plotantaresViz = 'n'
-plotPFcomparison = False
-style = Config.get('Analysis', 'plot_style')
-plot_all = Config.getboolean('Analysis', 'plot_all')
-zip_files = Config.getboolean('Analysis', 'zip_files')
-del_files = Config.getboolean('Analysis', 'del_files')
-
-fc, plotly_theme = set_style(style)
-
-
+def get_balmorel_results(obj: pd.DataFrame,
+                         cap: pd.DataFrame,
+                         cap_F: pd.DataFrame,
+                         eltrans: pd.DataFrame,
+                         h2trans: pd.DataFrame,
+                         dem: pd.DataFrame,
+                         pro: pd.DataFrame,
+                         proH2: pd.DataFrame,
+                         emi: pd.DataFrame,
+                         ):
     
-# Years
-Y = np.array(Config.get('RunMetaData', 'Y').split(',')).astype(int)
-Y.sort()
-Y = Y.astype(str)
-ref_year = Config.getint('RunMetaData', 'ref_year')
-gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
-
-### 0.1 Working Directory
-wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
-
-### 0.2 Antares region mapping
-with open(wk_dir + '/Pre-Processing/Output/A2B_regi.pkl', 'rb') as f:
-    A2B_regi = pickle.load(f)
-with open(wk_dir + '/Pre-Processing/Output/A2B_regi_h2.pkl', 'rb') as f:
-    A2B_regi_h2 = pickle.load(f)
-
-# Full antares region list
-with open(wk_dir + '/Pre-Processing/Output/antreglist.pkl', 'rb') as f:
-    ANTREGLIST = pickle.load(f)
-    
-### 0.3 Checking if running this script by itself, otherwise, specify scenario
-if np.all(pd.Series(sys.argv).str.find('Analysis.py') == -1):
-    test_mode = 'Y' # Set to N if you're running iterations
-    print('\n----------------------------\n\nTest mode ON\n\nScenario: %s\n\n----------------------------\n'%SC)
-else:
-    test_mode = 'N'
-
-### 0.4 Which results to import?
-ant_out = pd.Series(os.listdir(wk_dir + '/Antares/output'))
-ant_out = ant_out[ant_out.str.find(('eco-' + SC + '_iter').lower().replace('+',' ')) != -1].sort_values(ascending=False)
-
-# Find iterations
-iters = list(ant_out.str.split('_iter', expand=True).iloc[:,1].str.split('_y-',expand=True).iloc[:,0].astype(int)) 
-iters = pd.Series(iters).unique()
-iters.sort()
-print('\nIterations as read from Antares output: %d'%len(iters))
-
-
-#%% ------------------------------- ###
-###         1. Annual Values        ###
-### ------------------------------- ###
-
-### 1.0 Plot design
-figsize = (10,5)
-# back_color = (32/255, 31/255, 30/255)
-# xticks = [i for i in np.arange(iters[0], iters[-1]+1)]
- 
-
-### 1.1 Placeholders and useful data
-obj = pd.DataFrame({})
-Antobj = pd.DataFrame({})
-cap = pd.DataFrame({})
-cap_F = pd.DataFrame({})
-eltrans = pd.DataFrame({})
-h2trans = pd.DataFrame({})
-dem = pd.DataFrame({})
-pro = pd.DataFrame({})
-proH2 = pd.DataFrame({})
-emi = pd.DataFrame({})
-
-# uniq_fuels = np.array(['biogas', 'biooil', 'coal', 'electric', 'fueloil', 'heat',
-#        'hydrogen', 'lightoil', 'lignite', 'muniwaste', 'natgas',
-#        'nuclear', 'straw', 'sun', 'wasteheat', 'water', 'wind',
-#        'woodchips', 'woodpellets', 'woodwaste'], dtype=object)
-mc_choice = 'mc-all' # MC year in Antares for generation results
-for i in iters:
     ### 1.2 Load Balmorel Results
     print('Reading results from Balmorel/%s/model/MainResults_%s_Iter%d.gdx..'%(SC_folder, SC, i))
     ws = gams.GamsWorkspace(system_directory=gams_system_directory)  
@@ -197,8 +111,15 @@ for i in iters:
     temp = temp.groupby(['Model', 'Iter', 'Y', 'R']).aggregate({'Value' : np.sum})
     emi = pd.concat((emi, temp))
     
+    return obj, cap, cap_F, eltrans, h2trans, dem, curt, pro, proH2, emi
+
+def get_antares_results(years: pd.DataFrame,
+                        Antobj: pd.DataFrame,
+                        pro: pd.DataFrame,
+                        emi: pd.DataFrame,):
+    
     ### 1.3 Load Antares Results
-    for year in Y:
+    for year in years:
         
         if not(year == str(ref_year) and i != 0):
             ant_output = ant_out[ant_out.str.find(('eco-' + SC + '_iter%d_y-%s'%(i, year)).lower().replace('+', ' ')) != -1].values[0]
@@ -305,6 +226,111 @@ for i in iters:
             #     except FileNotFoundError:
             #         # No thermal generation
             #         pass
+
+    return Antobj, pro, emi
+
+### 0.0 Settings
+if not('SC' in locals()):
+    try:
+        # Try to read something from the command line
+        SC = sys.argv[1]
+    except:
+        # Otherwise, read config from top level
+        print('Reading SC from Config.ini..') 
+        Config = configparser.ConfigParser()
+        Config.read('Config.ini')
+        SC = Config.get('RunMetaData', 'SC')
+
+Config = configparser.ConfigParser()
+Config.read('Workflow/MetaResults/%s_meta.ini'%SC)
+SC_folder = Config.get('RunMetaData', 'SC_Folder')
+USE_CAPCRED   = Config.getboolean('PostProcessing', 'Capacitycredit')
+USE_H2CAPCRED   = Config.getboolean('PostProcessing', 'H2Capacitycredit')
+
+# Analysis Settings
+plotprofiles = 'n' # Choose whether to plot profiles or not
+plotantaresViz = 'n'
+plotPFcomparison = False
+style = Config.get('Analysis', 'plot_style')
+plot_all = Config.getboolean('Analysis', 'plot_all')
+zip_files = Config.getboolean('Analysis', 'zip_files')
+del_files = Config.getboolean('Analysis', 'del_files')
+
+fc, plotly_theme = set_style(style)
+
+
+    
+# Years
+years = np.array(Config.get('RunMetaData', 'Y').split(',')).astype(int)
+years.sort()
+years = years.astype(str)
+ref_year = Config.getint('RunMetaData', 'ref_year')
+gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
+
+### 0.1 Working Directory
+wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
+### 0.2 Antares region mapping
+with open(wk_dir + '/Pre-Processing/Output/A2B_regi.pkl', 'rb') as f:
+    A2B_regi = pickle.load(f)
+with open(wk_dir + '/Pre-Processing/Output/A2B_regi_h2.pkl', 'rb') as f:
+    A2B_regi_h2 = pickle.load(f)
+
+# Full antares region list
+with open(wk_dir + '/Pre-Processing/Output/antreglist.pkl', 'rb') as f:
+    ANTREGLIST = pickle.load(f)
+    
+### 0.3 Checking if running this script by itself, otherwise, specify scenario
+if np.all(pd.Series(sys.argv).str.find('Analysis.py') == -1):
+    test_mode = 'Y' # Set to N if you're running iterations
+    print('\n----------------------------\n\nTest mode ON\n\nScenario: %s\n\n----------------------------\n'%SC)
+else:
+    test_mode = 'N'
+
+### 0.4 Which results to import?
+ant_out = pd.Series(os.listdir(wk_dir + '/Antares/output'))
+ant_out = ant_out[ant_out.str.find(('eco-' + SC + '_iter').lower().replace('+',' ')) != -1].sort_values(ascending=False)
+
+# Find iterations
+iters = list(ant_out.str.split('_iter', expand=True).iloc[:,1].str.split('_y-',expand=True).iloc[:,0].astype(int)) 
+iters = pd.Series(iters).unique()
+iters.sort()
+print('\nIterations as read from Antares output: %d'%len(iters))
+
+
+#%% ------------------------------- ###
+###         1. Annual Values        ###
+### ------------------------------- ###
+
+### 1.0 Plot design
+figsize = (10,5)
+# back_color = (32/255, 31/255, 30/255)
+# xticks = [i for i in np.arange(iters[0], iters[-1]+1)]
+ 
+
+### 1.1 Placeholders and useful data
+obj = pd.DataFrame({})
+Antobj = pd.DataFrame({})
+cap = pd.DataFrame({})
+cap_F = pd.DataFrame({})
+eltrans = pd.DataFrame({})
+h2trans = pd.DataFrame({})
+dem = pd.DataFrame({})
+pro = pd.DataFrame({})
+proH2 = pd.DataFrame({})
+emi = pd.DataFrame({})
+
+# uniq_fuels = np.array(['biogas', 'biooil', 'coal', 'electric', 'fueloil', 'heat',
+#        'hydrogen', 'lightoil', 'lignite', 'muniwaste', 'natgas',
+#        'nuclear', 'straw', 'sun', 'wasteheat', 'water', 'wind',
+#        'woodchips', 'woodpellets', 'woodwaste'], dtype=object)
+mc_choice = 'mc-all' # MC year in Antares for generation results
+for i in iters:
+    
+    obj, cap, cap_F, eltrans, h2trans, dem, curt, pro, proH2, emi = get_balmorel_results(obj, cap, cap_F, eltrans, h2trans, dem, pro, proH2, emi)
+    
+    Antobj, pro, emi = get_antares_results(years, Antobj, pro, emi)
        
 #%% Reset index for plotly plots and store pickle file with all dataframes
 
@@ -500,7 +526,7 @@ fLOLD = pd.read_csv('Workflow/OverallResults/%s_LOLD.csv'%SC, index_col=0)
 if plotPFcomparison:
     colours = [(0.5, .85, 0.5), (.85, 0.5, 0.5), (0.5, 0.5, .85), (.85, .5, .85)]
     
-    for year in Y:
+    for year in years:
         # PF = pd.DataFrame()
         pfdata = pd.Series(os.listdir('Workflow/OverallResults'))[pd.Series(os.listdir('Workflow/OverallResults')).str.find('ParetoFront.csv') != -1]
         fig, ax = newplot(figsize=(7,3), fc=fc)
@@ -550,7 +576,7 @@ elbalance = {}
 if plotprofiles == 'y':
     for i in iters_to_plot:
         elbalance[i] = {}
-        for year in Y:
+        for year in years:
             elbalance[i][year] = {}
             ### Load Antares Results
             ant_output = ant_out[ant_out.str.find(('eco-' + SC + '_iter%d_y-%s'%(i, year)).lower().replace('+', ' ')) != -1].values[0]
@@ -752,7 +778,7 @@ if plotprofiles == 'y':
 
     ### 2.2 Antares Power Operation Plot
     for i in iters_to_plot:
-        for year in Y:
+        for year in years:
             fig, ax = newplot(figsize=figsize, fc=fc)
             total_bal = pd.DataFrame()
             for area in A2B_regi.keys():
@@ -905,8 +931,6 @@ if USE_CAPCRED:
     if USE_H2CAPCRED:
         results.append('CCH2.pkl')
 
-# Make sure to close open GAMS database before zipping
-del db
 
 if zip_files:
     
