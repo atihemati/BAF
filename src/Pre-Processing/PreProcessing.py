@@ -326,6 +326,8 @@ def generate_mappings(ctx):
                                 'PEAT' : {'CO2' : 0},
                                 'STRAW' : {'CO2' : 0}},
                 'CONDENSING-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
+                'CHP-BACK-PRESSURE-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
+                'CHP-EXTRACTION-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
                 'FUELCELL' : {'HYDROGEN' : {'CO2' : 0}}}
     {'BIOGAS' : 2.13,
                 'WOODCHIPS' : 3.34,

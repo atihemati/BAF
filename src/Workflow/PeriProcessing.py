@@ -138,6 +138,7 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
     # Get economic parameters
     
     ## Overall
+    ant_input = AntaresInput('Antares')
     eco = symbol_to_df(db, 'ECO_G_YCRAG', ['Y', 'C', 'R', 'A', 'G', 'F', 
                                         'Tech', 'Var', 'Subvar', 'Unit', 'Value'])
 
@@ -160,7 +161,6 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
     # Placeholders for modulation and data
     thermal_modulation = '\n'.join(['1\t1\t1\t0' for i in range(8760)]) + '\n'
     thermal_data = '\n'.join(['1\t1\t0\t0\t0\t0' for i in range(365)]) + '\n'
-
 
     ### 2.1 Go through regions
     thermal_config = configparser.ConfigParser()
@@ -247,10 +247,24 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                     enabled = 'false'
                     em_factor = 0
                     
-                # Save
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'enabled', enabled)
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'nominalcapacity', str(round(tech_cap)))
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'co2', str(em_factor))
+                # Create new cluster if it doesn't exist
+                cluster_name = '%s_%s'%(tech.lower(), fuel.lower())
+                if not(cluster_name in thermal_config.sections()):
+                    # First, save previous edits
+                    with open('Antares/input/thermal/clusters/%s/list.ini'%(region.lower()), 'w') as f:
+                        thermal_config.write(f)     
+                    thermal_config.clear()
+                    
+                    # Then, create new cluster 
+                    ant_input.create_thermal(region.lower(), cluster_name, fuel.lower())
+                    
+                    # Read again
+                    thermal_config.read('Antares/input/thermal/clusters/%s/list.ini'%region.lower())
+                           
+                # Make edits
+                thermal_config.set(cluster_name, 'enabled', enabled)
+                thermal_config.set(cluster_name, 'nominalcapacity', str(round(tech_cap)))
+                thermal_config.set(cluster_name, 'co2', str(em_factor))
                 
                 # Create transmission capacity for hydrogen offtake, for fuel cell:
                 if (tech == 'FUELCELL') & (fuel == 'HYDROGEN') & (tech_cap > 1e-5):
@@ -266,8 +280,8 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                     
                     print('Average price of hydrogen when fuel cell is producing:', round(h2_fuelcell_meanprice), 'eur/MWh')
                 
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'marginal-cost', str(round(mc_cost)))
-                thermal_config.set('%s_%s'%(tech.lower(), fuel.lower()), 'market-bid-cost', str(round(mc_cost)))
+                thermal_config.set(cluster_name, 'marginal-cost', str(round(mc_cost)))
+                thermal_config.set(cluster_name, 'market-bid-cost', str(round(mc_cost)))
 
                 # Save capacity timeseries (assuming no outage!)
                 temp = pd.Series(np.ones(8760) * tech_cap).astype(int)
