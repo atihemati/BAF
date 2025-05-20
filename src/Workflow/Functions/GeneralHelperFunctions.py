@@ -598,8 +598,8 @@ class AntaresInput:
         
         # Create other files
         cluster_series_path = os.path.join(self.path_thermal_clusters[area]['series'], cluster_name)
-        if not(os.path.exists(cluster_series_path + '/../')):
-            make_directory_if_not_exist(cluster_series_path + '/../')
+        if not(os.path.exists(cluster_series_path.rstrip(cluster_name))):
+            make_directory_if_not_exist(cluster_series_path.rstrip(cluster_name))
         make_directory_if_not_exist(cluster_series_path)
     
         with open(os.path.join(cluster_series_path, 'CO2Cost.txt'), 'w') as f:
@@ -611,8 +611,8 @@ class AntaresInput:
             f.write("\n")
             
         prepro_path = os.path.join(self.path_thermal_clusters[area]['prepro'], cluster_name)
-        if not(os.path.exists(prepro_path + '/../')):
-            make_directory_if_not_exist(prepro_path + '/../')
+        if not(os.path.exists(prepro_path.rstrip(cluster_name))):
+            make_directory_if_not_exist(prepro_path.rstrip(cluster_name))
         make_directory_if_not_exist(prepro_path)
         with open(os.path.join(prepro_path, 'data.txt'), 'w') as f:
             f.write("\n".join(["1\t1\t0\t0\t0\t0"]*365))
@@ -642,7 +642,8 @@ class AntaresInput:
 
 def make_directory_if_not_exist(path: str):
     if os.path.exists(path):
-        print(f'{path} already existed')
+        pass
+        # print(f'{path} already existed')
     else:
         os.mkdir(path)
 

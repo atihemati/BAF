@@ -160,9 +160,9 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
     # Get Balmorel Results
     m=Balmorel('Balmorel')
     m.locate_results()
-    m.files
     res = MainResults('MainResults_' + scenario + '.gdx',
-                      paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model')
+                      paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model', 
+                      system_directory='/opt/gams/48.5/')
     
     year = str(year)
     df1_temp = res.get_result('PRO_YCRAGFST').query('Year == @year')
