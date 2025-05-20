@@ -8,7 +8,7 @@ import numpy as np
 from datetime import datetime
 import platform
 OS = platform.platform().split('-')[0]
-
+import matplotlib.pyplot as plt
 import shutil
 import os
 import sys
@@ -16,6 +16,7 @@ import pickle
 import configparser
 import plotly.express as px
 import plotly.graph_objects as go
+from pybalmorel.formatting import balmorel_colours
 from Functions.Formatting import newplot, set_style, stacked_bar
 from Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
 from Functions.antaresViz import stacked_plot
@@ -124,7 +125,7 @@ def get_antares_results(years: pd.DataFrame,
         
         if not(year == str(ref_year) and i != 0):
             ant_output = ant_out[ant_out.str.find(('eco-' + SC + '_iter%d_y-%s'%(i, year)).lower().replace('+', ' ')) != -1].values[0]
-            print('Reading results from %s..'%ant_output)
+            print('\nReading results from %s..\n'%ant_output)
             
             # Load class
             ant_res = AntaresOutput(ant_output)
@@ -158,6 +159,8 @@ def get_antares_results(years: pd.DataFrame,
                             pro.loc[year, 'Antares', area, fuel, tech, i] = f[col].values[0]/1e6
                         else:
                             pro.loc[year, 'Antares', area, 'ELECTRIC', 'INTRASEASONAL-ELECT-STORAGE', i] = f[col].values[0]/1e6
+                        # print(f'Production of {tech} {fuel} was ', f[col].values[0]/1e6)
+                        
                 except FileNotFoundError:
                     # print('No thermal generation in area %s'%area)
                     pass
@@ -182,7 +185,6 @@ def get_antares_results(years: pd.DataFrame,
                 # In area itself
                 pro.loc[year, 'Antares', area, 'WATER', 'HYDRO-RESERVOIRS', i] = f.loc[0, 'H. STOR'] / 1e6
                 pro.loc[year, 'Antares', area, 'WATER', 'HYDRO-RUN-OF-RIVER', i] = f.loc[0, 'H. ROR'] / 1e6
-                pro.loc[year, 'Antares', area, 'ELECTRIC', 'INTRASEASONAL-ELECT-STORAGE', i] = 0
                 
                 ## These are captures by z_bat and z_psp
                 # for hydro_area in ['00_psp_sto']:
@@ -948,9 +950,8 @@ if __name__ == '__main__':
     iters.sort()
     print('\nIterations as read from Antares output: %d'%len(iters))
 
-
-    #%% ------------------------------- ###
-    ###         1. Annual Values        ###
+    ### ------------------------------- ###
+    ###     1. Collect Annual Values    ###
     ### ------------------------------- ###
 
     ### 1.0 Plot design
@@ -995,3 +996,15 @@ if __name__ == '__main__':
                     'pro' : pro,
                     'proh2' : proH2,
                     'emi' : emi}, f)
+
+    # A more simple plot
+    fig, ax = plt.subplots()
+    balmorel_colours['Spilled'] = 'black'
+    balmorel_colours['WOOD'] = 'orange'
+    pro.pivot_table(index='Model', columns='F', values='Value', aggfunc='sum').plot(ax=ax, 
+                                                                                    kind='bar', 
+                                                                                    stacked=True,
+                                                                                    color=balmorel_colours)
+    ax.set_ylabel('Electricity Generation (TWh)')
+    ax.legend(bbox_to_anchor=(1.05, .5), loc='center left')
+    fig.savefig('Workflow/OverallResults/elec_gen.png', bbox_inches='tight')
