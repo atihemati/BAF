@@ -19,7 +19,8 @@ import plotly.graph_objects as go
 from Functions.Formatting import newplot, set_style, stacked_bar
 from Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
 from Functions.antaresViz import stacked_plot
-
+import warnings
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 def get_balmorel_results(obj: pd.DataFrame,
                          cap: pd.DataFrame,
@@ -40,29 +41,29 @@ def get_balmorel_results(obj: pd.DataFrame,
     ## Get objective function
     temp = symbol_to_df(db, 'OBJ_YCR', ['Y', 'C', 'R', 'Var', 'Unit', 'Value'])
     temp.loc[:, 'Iter'] = i
-    temp = temp.groupby(['Y', 'Var', 'Iter']).aggregate({'Value' : np.sum})
+    temp = temp.groupby(['Y', 'Var', 'Iter']).aggregate({'Value' : 'sum'})
     obj = pd.concat((obj, temp))
 
     ## Get Generation & Storage Capacities
     temp = symbol_to_df(db, 'G_CAP_YCRAF', ['Y', 'C', 'R', 'A', 'G', 'F', 'Commodity', 'Tech', 'Var', 'Unit', 'Value'])
     temp.loc[:, 'Iter'] = i
     temp_F = temp[(temp.Tech != 'H2-STORAGE') & (temp.Tech != 'INTRASEASONAL-ELECT-STORAGE') & (temp.Tech != 'INTRASEASONAL-HEAT-STORAGE')]
-    temp_F = temp_F.groupby(['Y', 'F', 'Iter']).aggregate({'Value' : np.sum})
-    temp = temp.groupby(['Y', 'Tech', 'Iter']).aggregate({'Value' : np.sum})
+    temp_F = temp_F.groupby(['Y', 'F', 'Iter']).aggregate({'Value' : 'sum'})
+    temp = temp.groupby(['Y', 'Tech', 'Iter']).aggregate({'Value' : 'sum'})
     cap = pd.concat((cap, temp))
     cap_F = pd.concat((cap_F, temp_F))
     
     ## Get Electricity Transmission Capacities
     temp = symbol_to_df(db, 'X_CAP_YCR', ['Y', 'C', 'From', 'To', 'Var', 'Unit', 'Value'])
     temp.loc[:, 'Iter'] = i
-    temp = temp.groupby(['Y', 'To', 'Iter', 'From']).aggregate({'Value' : np.sum})
+    temp = temp.groupby(['Y', 'To', 'Iter', 'From']).aggregate({'Value' : 'sum'})
     eltrans = pd.concat((eltrans, temp))
 
     ## Get H2 Transmission Capacities
     try:
         temp = symbol_to_df(db, 'XH2_CAP_YCR', ['Y', 'C', 'From', 'To', 'Var', 'Unit', 'Value'])
         temp.loc[:, 'Iter'] = i
-        temp = temp.groupby(['Y', 'To', 'Iter', 'From']).aggregate({'Value' : np.sum})
+        temp = temp.groupby(['Y', 'To', 'Iter', 'From']).aggregate({'Value' : 'sum'})
         h2trans = pd.concat((h2trans, temp))
     except ValueError:
         print('No hydrogen transmission')
@@ -70,7 +71,7 @@ def get_balmorel_results(obj: pd.DataFrame,
     ## Get Demand
     temp = symbol_to_df(db, 'EL_DEMAND_YCR', ['Y', 'C', 'R', 'Var', 'Unit', 'Value'])
     temp.loc[:, 'Iter'] = i
-    temp = temp.groupby(['Y', 'Var', 'Iter']).aggregate({'Value' : np.sum})
+    temp = temp.groupby(['Y', 'Var', 'Iter']).aggregate({'Value' : 'sum'})
     dem = pd.concat((dem, temp))
 
     ## Get Production
@@ -87,8 +88,8 @@ def get_balmorel_results(obj: pd.DataFrame,
     # Filter away hydrogen and electrolyser 
     temp2 = temp[(temp.Commodity == 'ELECTRICITY')].copy()
     temp = temp[(temp.Commodity == 'HYDROGEN')]
-    temp2 = temp2.groupby(['Y', 'Model', 'R', 'F', 'Tech', 'Iter']).aggregate({'Value' : np.sum})
-    temp = temp.groupby(['Y', 'Model', 'R', 'F', 'Tech', 'Iter']).aggregate({'Value' : np.sum})
+    temp2 = temp2.groupby(['Y', 'Model', 'R', 'F', 'Tech', 'Iter']).aggregate({'Value' : 'sum'})
+    temp = temp.groupby(['Y', 'Model', 'R', 'F', 'Tech', 'Iter']).aggregate({'Value' : 'sum'})
     pro = pd.concat((pro, temp2))
     pro = pd.concat((pro, curt))
     curt = curt.reset_index()
@@ -108,7 +109,7 @@ def get_balmorel_results(obj: pd.DataFrame,
                             index=[0])
     temp.loc[:, 'Iter'] = i
     temp.loc[:, 'Model'] = 'Balmorel'
-    temp = temp.groupby(['Model', 'Iter', 'Y', 'R']).aggregate({'Value' : np.sum})
+    temp = temp.groupby(['Model', 'Iter', 'Y', 'R']).aggregate({'Value' : 'sum'})
     emi = pd.concat((emi, temp))
     
     return obj, cap, cap_F, eltrans, h2trans, dem, curt, pro, proH2, emi
@@ -142,14 +143,16 @@ def get_antares_results(years: pd.DataFrame,
                 
             ## Electricity
             for area in A2B_regi.keys(): 
+                print(area)
                 try:
-                    f = ant_res.load_area_results(area, 'details', 'annual', mc_choice)
+                    f = ant_res.load_area_results(area, 'details', 'annual', mc_choice).iloc[:, 2:]
                     
                     ## Thermal Generation
-                    for col in [column for column in f.columns if not(column in [area, 'annual'])]:
-                        tech = col.split('_')[0]
-                        fuel = col.split('_')[1]
-                        # print(tech, fuel)
+                    for col in [column for column in f.columns if not('.1' in column or '.2' in column or '.3' in column)]:
+                        
+                        tech = col.split('_')[0].upper()
+                        fuel = col.split('_')[1].upper()
+                        print(tech, fuel)
                         # Save annual production
                         pro.loc[year, 'Antares', area, fuel, tech, i] = f[col].values[0]/1e6
                 except FileNotFoundError:
@@ -162,10 +165,11 @@ def get_antares_results(years: pd.DataFrame,
                 emi.loc['Antares', i, year, area] = f['CO2 EMIS.'].sum() / 1e3 # kton
                     
                 ## VRE Generation
-                translation = {'WIND' : 'WIND ONSHORE',
-                            'SOLAR' : 'SOLAR PV'}
-                for ren in ['WIND', 'SOLAR']:
-                    pro.loc[year, 'Antares', area, ren, ren, i] = f[translation[ren]].values[0] / 1e6
+                translation = {'WIND ONSHORE' : 'WIND',
+                               'WIND OFFSHORE' : 'WIND',
+                               'SOLAR PV' : 'SUN'}
+                for ren in ['WIND OFFSHORE', 'WIND ONSHORE', 'SOLAR PV']:
+                    pro.loc[year, 'Antares', area, translation[ren], ren, i] = f[ren].values[0] / 1e6
 
                 ## Spilled Energy (Mainly curtailment of VRE, but in principle thermal must-runs as well)
                 spilled = f['SPIL. ENRG'].values[0]             
@@ -175,25 +179,26 @@ def get_antares_results(years: pd.DataFrame,
                 # In area itself
                 pro.loc[year, 'Antares', area, 'WATER', 'HYDRO-RESERVOIRS', i] = f.loc[0, 'H. STOR'] / 1e6
                 pro.loc[year, 'Antares', area, 'WATER', 'HYDRO-RUN-OF-RIVER', i] = f.loc[0, 'H. ROR'] / 1e6
+                pro.loc[year, 'Antares', area, 'ELECTRIC', 'INTRASEASONAL-ELECT-STORAGE', i] = 0
                 
-                ## Modelled as virtual units (missing 0_pump_open for 2_*_hydro_open, but doesn't interact with BZ)
-                for hydro_area in ['1_PUMP_closed', '1_TURB_closed', '2_*_HYDRO_OPEN', '3_*_HYDRO_RES', '4_*_HYDRO_SWELL']:
-                    try:
-                        f = ant_res.load_link_results([hydro_area.replace('*', area), area], temporal='hourly', mc_year=mc_choice)
-                        flow = f.loc[:, 'FLOW LIN.']
-                        pro.loc[year, 'Antares', area, 'WATER', 'HYDRO-RESERVOIRS', i] += flow[flow > 0].sum() / 1e6  
+                ## These are captures by z_bat and z_psp
+                # for hydro_area in ['00_psp_sto']:
+                #     try:
+                #         f = ant_res.load_link_results([hydro_area.replace('*', area), area], temporal='hourly', mc_year=mc_choice)
+                #         flow = f.loc[:, 'FLOW LIN.']
+                #         pro.loc[(year, 'Antares', area, 'ELECTRIC', 'INTRASEASONAL-ELECT-STORAGE', i), 'Value'] += flow.loc[flow > 0].sum() / 1e6  
                         
-                    except FileNotFoundError:
-                        # print('No connection between %s and %s'%(hydro_area.replace('*', area), area))                
-                        pass
+                #     except FileNotFoundError:
+                #         print('No connection between %s and %s'%(hydro_area.replace('*', area), area))                
+                #         pass
                     
-                # Battery here
-                try:
-                    f = ant_res.load_link_results(['0_battery_turb', area], temporal='annual', mc_year=mc_choice)
-                    pro.loc[year, 'Antares', area, 'ELECTRIC', 'BATTERY', i] = f.loc[0, 'FLOW LIN.'] / 1e6
-                except FileNotFoundError:
-                    # No battery to ITCO, e.g.
-                    pass
+                # # Battery here
+                # try:
+                #     f = ant_res.load_link_results(['0_bat_sto', area], temporal='annual', mc_year=mc_choice)
+                #     pro.loc[year, 'Antares', area, 'ELECTRIC', 'BATTERY', i] = f.loc[0, 'FLOW LIN.'] / 1e6
+                # except FileNotFoundError:
+                #     # No battery to ITCO, e.g.
+                #     pass
             
             ## Hydrogen
             # for area in A2B_regi_h2.keys():
@@ -386,7 +391,7 @@ fig.write_html('Workflow/OverallResults/%s_GenerationFuelCapacities.html'%SC)
 ### 1.7 Generation wrt. Fuel
 # Electricity
 for model in ['Balmorel', 'Antares']:
-    temp = pro[pro.Model == model].groupby(['Y', 'F', 'Iter']).aggregate({'Value' : np.sum})
+    temp = pro[pro.Model == model].groupby(['Y', 'F', 'Iter']).aggregate({'Value' : 'sum'})
     temp.reset_index(inplace=True)
     # temp = temp[~(temp.F == 'Spilled')]
     idx = filter_low_max(temp, 'Iter', plot_all)
@@ -398,7 +403,7 @@ for model in ['Balmorel', 'Antares']:
 
 # Hydrogen
 for model in ['Balmorel', 'Antares']:
-    temp = proH2[proH2.Model == model].groupby(['Y', 'F', 'Iter']).aggregate({'Value' : np.sum})
+    temp = proH2[proH2.Model == model].groupby(['Y', 'F', 'Iter']).aggregate({'Value' : 'sum'})
     temp.reset_index(inplace=True)
     # temp = temp[~(temp.F == 'Spilled')]
     idx = filter_low_max(temp, 'Iter', plot_all)
@@ -422,7 +427,7 @@ fig.write_html('Workflow/OverallResults/%s_StorageCapacities.html'%SC)
 
 ### 1.9 Electricity Transmission Capacities
 # Filter iterations or not
-temp = eltrans.groupby(['Y', 'Iter', 'To']).aggregate({'Value' : np.sum}) # Account for double counting
+temp = eltrans.groupby(['Y', 'Iter', 'To']).aggregate({'Value' : 'sum'}) # Account for double counting
 # temp = eltrans.groupby(['Y', 'From', 'Iter', 'To']).aggregate({'Value' : lambda x: sum(x)/2}) # Account for double counting
 temp.reset_index(inplace=True)
 idx = filter_low_max(temp, 'Iter', plot_all)
@@ -435,7 +440,7 @@ fig.write_html('Workflow/OverallResults/%s_ElTransCapacities.html'%SC)
 ### 1.10 Hydrogen Transmission Capacities
 try:
     # Filter iterations or not
-    temp = h2trans.groupby(['Y', 'Iter', 'To']).aggregate({'Value' : np.sum}) # Account for double counting
+    temp = h2trans.groupby(['Y', 'Iter', 'To']).aggregate({'Value' : 'sum'}) # Account for double counting
     # temp = eltrans.groupby(['Y', 'From', 'Iter', 'To']).aggregate({'Value' : lambda x: sum(x)/2}) # Account for double counting
     temp.reset_index(inplace=True)
     idx = filter_low_max(temp, 'Iter', plot_all)
@@ -503,13 +508,13 @@ fLOLD = pd.read_csv('Workflow/OverallResults/%s_LOLD.csv'%SC, index_col=0)
 # PF = pd.DataFrame({})
 # fig, ax = newplot(figsize=figsize, fc=fc)
 # for year in Y:
-#     temp = fLOLD[(fLOLD.Year == int(year)) & (fLOLD.Carrier == 'Electricity')].groupby(['Iter', 'Year']).aggregate({'Value (h)' : np.sum})
+#     temp = fLOLD[(fLOLD.Year == int(year)) & (fLOLD.Carrier == 'Electricity')].groupby(['Iter', 'Year']).aggregate({'Value (h)' : 'sum'})
     
 #     PF = pd.concat((PF, pd.DataFrame({'Iter' : np.arange(len(temp)),
 #                     'SC' : [SC]*len(temp),
 #                     'Year' : [year]*len(temp),
 #                     'ElecLOLD_h' : temp.values[:,0],
-#                     'SystemCost_MEUR' : obj[obj.Y == year].groupby(by=['Iter', 'Y']).aggregate({'Value' : np.sum}).values[:,0]})))
+#                     'SystemCost_MEUR' : obj[obj.Y == year].groupby(by=['Iter', 'Y']).aggregate({'Value' : 'sum'}).values[:,0]})))
 
 #     ax.plot(PF.ElecLOLD_h,
 #             PF.SystemCost_MEUR,
@@ -601,7 +606,7 @@ if plotprofiles == 'y':
                     
                     ## Battery
                     f = pd.read_table(wk_dir + '/Antares/output/' + ant_output +\
-                                    '/economy/%s/links/0_battery_pmp - %s/values-hourly.txt'%(mc_choice, area),
+                                    '/economy/%s/links/0_bat_sto - %s/values-hourly.txt'%(mc_choice, area),
                                     skiprows=[0,1,2,3,5,6]) # At the moment the recent one is -2
                     
                     prod = f['FLOW LIN.'].values
@@ -610,7 +615,7 @@ if plotprofiles == 'y':
                     balance['Bat Charge'] = prod
                     
                     f = pd.read_table(wk_dir + '/Antares/output/' + ant_output +\
-                            '/economy/%s/links/0_battery_turb - %s/values-hourly.txt'%(mc_choice, area),
+                            '/economy/%s/links/0_bat_sto - %s/values-hourly.txt'%(mc_choice, area),
                             skiprows=[0,1,2,3,5,6]) # At the moment the recent one is -2
                     
                     prod = f['FLOW LIN.'].values
