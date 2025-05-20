@@ -16,9 +16,9 @@ import pickle
 import configparser
 import plotly.express as px
 import plotly.graph_objects as go
-from Workflow.Functions.Formatting import newplot, set_style, stacked_bar
-from Workflow.Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
-from Workflow.Functions.antaresViz import stacked_plot
+from Functions.Formatting import newplot, set_style, stacked_bar
+from Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
+from Functions.antaresViz import stacked_plot
 
 ### 0.0 Settings
 if not('SC' in locals()):
@@ -56,7 +56,7 @@ Y = np.array(Config.get('RunMetaData', 'Y').split(',')).astype(int)
 Y.sort()
 Y = Y.astype(str)
 ref_year = Config.getint('RunMetaData', 'ref_year')
-
+gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
 
 ### 0.1 Working Directory
 wk_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -120,7 +120,7 @@ mc_choice = 'mc-all' # MC year in Antares for generation results
 for i in iters:
     ### 1.2 Load Balmorel Results
     print('Reading results from Balmorel/%s/model/MainResults_%s_Iter%d.gdx..'%(SC_folder, SC, i))
-    ws = gams.GamsWorkspace()  
+    ws = gams.GamsWorkspace(system_directory=gams_system_directory)  
     db = ws.add_database_from_gdx(wk_dir + "/Balmorel/%s/model/MainResults_%s_Iter%d.gdx"%(SC_folder, SC, i))
 
     ## Get objective function
@@ -275,36 +275,36 @@ for i in iters:
                     pass
             
             ## Hydrogen
-            for area in A2B_regi_h2.keys():
+            # for area in A2B_regi_h2.keys():
                 
-                # File
-                temp = ant_res.load_area_results(area, temporal='annual', mc_year=mc_choice)
+            #     # File
+            #     temp = ant_res.load_area_results(area, temporal='annual', mc_year=mc_choice)
                 
-                ## Emissions
-                emi.loc['Antares', i, year, area] = temp['CO2 EMIS.'].sum() / 1e3 # kton
+            #     ## Emissions
+            #     emi.loc['Antares', i, year, area] = temp['CO2 EMIS.'].sum() / 1e3 # kton
                 
-                ## H2 Storages
-                proH2.loc[year, 'Antares', area, 'HYDROGEN', 'Large-scale Storage', i] = temp.loc[0, 'H. STOR'] / 1e6
+            #     ## H2 Storages
+            #     proH2.loc[year, 'Antares', area, 'HYDROGEN', 'Large-scale Storage', i] = temp.loc[0, 'H. STOR'] / 1e6
 
-                temp = ant_res.load_link_results(['0_h2tank_turb', area], temporal='annual', mc_year=mc_choice)
-                proH2.loc[year, 'Antares', area, 'HYDROGEN', 'Tank Storage', i] = temp.loc[0, 'FLOW LIN.'] / 1e6
+            #     temp = ant_res.load_link_results(['0_h2tank_turb', area], temporal='annual', mc_year=mc_choice)
+            #     proH2.loc[year, 'Antares', area, 'HYDROGEN', 'Tank Storage', i] = temp.loc[0, 'FLOW LIN.'] / 1e6
                 
-                # Electrolyser
-                temp = ant_res.load_link_results(['x_c3', area], temporal='annual', mc_year=mc_choice)
-                proH2.loc[year, 'Antares', area, 'ELECTRIC', 'ELECTROLYZER', i] = temp.loc[0, 'FLOW LIN.'] / 1e6
+            #     # Electrolyser
+            #     temp = ant_res.load_link_results(['x_c3', area], temporal='annual', mc_year=mc_choice)
+            #     proH2.loc[year, 'Antares', area, 'ELECTRIC', 'ELECTROLYZER', i] = temp.loc[0, 'FLOW LIN.'] / 1e6
 
-                # SMR
-                try:
-                    temp = ant_res.load_area_results(area, 'details', 'annual', mc_choice)
-                    for col in [column for column in temp.columns if not(column in [area, 'annual'])]:
-                        tech = col.split('_')[0]
-                        fuel = col.split('_')[1]
+            #     # SMR
+            #     try:
+            #         temp = ant_res.load_area_results(area, 'details', 'annual', mc_choice)
+            #         for col in [column for column in temp.columns if not(column in [area, 'annual'])]:
+            #             tech = col.split('_')[0]
+            #             fuel = col.split('_')[1]
                         
-                        # Save annual production
-                        proH2.loc[year, 'Antares', area, fuel.upper(), tech.upper(), i] = temp[col].values[0]/1e6
-                except FileNotFoundError:
-                    # No thermal generation
-                    pass
+            #             # Save annual production
+            #             proH2.loc[year, 'Antares', area, fuel.upper(), tech.upper(), i] = temp[col].values[0]/1e6
+            #     except FileNotFoundError:
+            #         # No thermal generation
+            #         pass
        
 #%% Reset index for plotly plots and store pickle file with all dataframes
 
@@ -854,21 +854,22 @@ df.to_csv('Workflow/OverallResults/H2LOLD_AllSC.csv', index=False)
 l = pd.Series(os.listdir('Antares/output'))
 
 df = pd.DataFrame()
-for file in l:    
-    try:
-        temp = pd.read_table('Antares/output/%s/annualSystemCost.txt'%file, header=None)
-        temp = float(temp.loc[0,0].lstrip('EXP : '))
-        
-        SCENARIO = file.split('eco-')[1]
-        year = int(SCENARIO.split('_y-')[1])
-        SCENARIO = SCENARIO.split('_y-')[0]
-        iter = int(SCENARIO.split('_iter')[1])
-        SCENARIO = SCENARIO.split('_iter')[0]
-        
-        df = df._append(pd.DataFrame({'SC' : SCENARIO, 'Y' : year, 'Iter' : iter, 'ObjCost' : temp},
-                                     index=[0]), ignore_index=True)
-    except FileNotFoundError:
-        pass
+for file in l:
+    if '_iter' in file and '_y-' in file:    
+        try:
+            temp = pd.read_table('Antares/output/%s/annualSystemCost.txt'%file, header=None)
+            temp = float(temp.loc[0,0].lstrip('EXP : '))
+            
+            SCENARIO = file.split('eco-')[1]
+            year = int(SCENARIO.split('_y-')[1])
+            SCENARIO = SCENARIO.split('_y-')[0]
+            iter = int(SCENARIO.split('_iter')[1])
+            SCENARIO = SCENARIO.split('_iter')[0]
+            
+            df = df._append(pd.DataFrame({'SC' : SCENARIO, 'Y' : year, 'Iter' : iter, 'ObjCost' : temp},
+                                        index=[0]), ignore_index=True)
+        except FileNotFoundError:
+            pass
 
 df.to_csv('Workflow/OverallResults/AntaresSystemCost.csv', index=False)
 
