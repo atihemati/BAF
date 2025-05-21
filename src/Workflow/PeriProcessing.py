@@ -786,8 +786,8 @@ def antares_weekly_resource_constraints(
         CCCRRR.loc[country, 'Done?'] = True
 
 
-def create_demand_response(scenario: str, year: int):
-    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True)
+def create_demand_response(scenario: str, year: int, gams_system_directory: str = None):
+    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory)
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
     for commodity in commodities:
@@ -981,7 +981,7 @@ def peri_process(sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(SC, year)
+    create_demand_response(SC, year, gams_system_directory=gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')

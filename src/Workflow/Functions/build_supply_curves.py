@@ -148,7 +148,7 @@ def combine_multiple_supply_curves(x_list, y_list):
     return combined_x, combined_y
 
 def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = False,
-                        plot_all_curves: bool = False):
+                        plot_all_curves: bool = False, gams_system_directory: str = None):
     """Create seasonal curves for hydrogen and heat for every region in a scenario 
 
     Args:
@@ -162,7 +162,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
     m.locate_results()
     res = MainResults('MainResults_' + scenario + '.gdx',
                       paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model', 
-                      system_directory='/opt/gams/48.5/')
+                      system_directory=gams_system_directory)
     
     year = str(year)
     df1_temp = res.get_result('PRO_YCRAGFST').query('Year == @year')
