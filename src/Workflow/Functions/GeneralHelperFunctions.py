@@ -389,6 +389,9 @@ def ReadIncFilePrefix(name, incfile_prefix_path, weather_year):
 
 
 class AntaresOutput:
+    """
+    A class for handling Antares outputs, based on Antares 8.7
+    """
     
     def __init__(self, result_name: str, folder_name: str='Antares', wk_dir: str='.'):
         # Set path to result
@@ -483,6 +486,9 @@ class AntaresOutput:
 
 
 class AntaresInput:
+    """
+    A class for handling Antares inputs, based on Antares 8.7
+    """
     
     def __init__(self, folder_name: str='Antares', wk_dir: str='.'):
         # Set path to result
