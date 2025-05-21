@@ -504,7 +504,7 @@ class AntaresInput:
             config.read(self.path_thermal_clusters[area]['ini'])
             self.thermal_clusters[area] = config.sections()
 
-    def thermal(self, area: str, series: bool = False, cluster_name: str = None):
+    def thermal(self, area: str, series: bool = False, cluster_name: str = ''):
         
         area = area.lower()
         cluster_name = cluster_name.lower()

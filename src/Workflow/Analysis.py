@@ -983,7 +983,7 @@ if __name__ == '__main__':
         
         Antobj, pro, emi = get_antares_results(years, Antobj, pro, emi)
         
-    #%% Reset index for plotly plots and store pickle file with all dataframes
+    # Reset index for plotly plots and store pickle file with all dataframes
 
     with open('Workflow/OverallResults/%s_results.pkl'%SC, 'wb') as f:
         pickle.dump({'obj' : obj,

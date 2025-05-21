@@ -246,13 +246,4 @@ while (not(convergence)) & (N_errors == 0) & (i <= MaxIteration):
 print('Subprocess errors: %d'%N_errors)
 print(error_log)
 
-#%% ------------------------------- ###
-###           3. Analysis           ###
-### ------------------------------- ###
- 
-if N_errors == 0:
-  run_module('Workflow.Analysis', init_globals={'SC' : SC})
-  sys.stdout.flush()
-
-  os.chdir(wk_dir)
   
