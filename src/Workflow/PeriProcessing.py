@@ -790,6 +790,10 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
     curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory)
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
+    
+    unserved_energy_cost = configparser.ConfigParser()
+    unserved_energy_cost.read('Antares/input/thermal/areas.ini')
+    
     for commodity in commodities:
         
         regions = curves[commodity].keys()
@@ -802,9 +806,10 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
             except FileNotFoundError:
                 pass
             
-            # Placeholder for availability and electricity to commodity load
+            # Placeholder for availability, electricity to commodity load and unserved energy cost (highest marginal price + 1 €/MWh)
             availability = {}
             load = np.zeros(8760)
+            highest_price = 0
             
             seasons = curves[commodity][region].keys()        
             for season in seasons:
@@ -813,6 +818,11 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
                                     'capacity' : curves[commodity][region][season]['capacity']},
                                    index=np.arange(len(curves[commodity][region][season]['price'])))
                 
+                # Store max price if higher than overall highest price for region
+                max_seasonal_price = round(temp['price'].max())
+                if max_seasonal_price >= highest_price:
+                    highest_price = max_seasonal_price + 1
+
                 # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
                 diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
                 
@@ -849,8 +859,12 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
             for cluster in availability.keys():
                 with open(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 'w') as f:
                     f.write("\n".join(list(availability[cluster].astype(str))))
-                
+            
+            # Save unserved energy cost
+            unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))
 
+    with open('Antares/input/thermal/areas.ini', 'w') as f:
+        unserved_energy_cost.write(f)
 
 def peri_process(sc_name: str, year: str):
     """The processing of results from Balmorel to Antares
@@ -873,8 +887,12 @@ def peri_process(sc_name: str, year: str):
         sc_name = Config.get('RunMetaData', 'SC')
 
     ## Configuration file
+    config_file_path = 'Workflow/MetaResults/%s_meta.ini'%sc_name
+    if not(os.path.exists(config_file_path)):
+        raise FileNotFoundError("Couldnt find %s"%config_file_path)
+    
     Config = configparser.ConfigParser()
-    Config.read('Workflow/MetaResults/%s_meta.ini'%sc_name)
+    Config.read(config_file_path)
     SC_folder = Config.get('RunMetaData', 'SC_Folder')
     gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
     
