@@ -1,4 +1,4 @@
-#%% ------------------------------- ###
+### ------------------------------- ###
 ###            0. Import            ###
 ### ------------------------------- ###
 
@@ -144,7 +144,6 @@ def get_antares_results(years: pd.DataFrame,
                 
             ## Electricity
             for area in A2B_regi.keys(): 
-                print(area)
                 try:
                     f = ant_res.load_area_results(area, 'details', 'annual', mc_choice).iloc[:, 2:]
                     
@@ -367,7 +366,7 @@ def old_plotting():
         fig.write_html('Workflow/OverallResults/%s_%sEmissions.html'%(SC, model))
     
 
-    #%% 1.12 Unserved Energy
+    ### 1.12 Unserved Energy
     # for carrier in ['Elec', 'H2']:
     #     f = pd.read_csv('OverallResults/%s_%sNotServedMWh.csv'%(SC, carrier))
     #     f.columns = ['Iter'] + list(f.columns[1:])
@@ -385,7 +384,7 @@ def old_plotting():
     #                 bbox_inches='tight', transparent=True)
 
 
-    #%% ------------------------------- ###
+    ### ------------------------------- ###
     ###         2. Pareto Front         ###
     ### ------------------------------- ###
 
@@ -416,7 +415,7 @@ def old_plotting():
     # PF.to_csv('Workflow/OverallResults/%s_ParetoFront.csv'%SC, index=False)
 
 
-    #%% 2.2 Comparison between other pareto fronts
+    ### 2.2 Comparison between other pareto fronts
     if plotPFcomparison:
         colours = [(0.5, .85, 0.5), (.85, 0.5, 0.5), (0.5, 0.5, .85), (.85, .5, .85)]
         
@@ -446,7 +445,7 @@ def old_plotting():
                         bbox_inches='tight')
 
 
-    #%% ------------------------------- ###
+    ###------------------------------- ###
     ###           2. Profiles           ###
     ### ------------------------------- ###
 
@@ -736,7 +735,7 @@ def old_plotting():
         fig_p.update_xaxes(range=[0, 168])
 
 
-    #%% ------------------------------- ###
+    ### ------------------------------- ###
     ###          3. AntaresViz          ###
     ### ------------------------------- ###
 
@@ -744,7 +743,7 @@ def old_plotting():
         stacked_plot()
         
 def store_and_zip():
-    #%% ------------------------------- ###
+    ### ------------------------------- ###
     ###        4. Collect Results       ###
     ### ------------------------------- ###
 
@@ -1005,6 +1004,7 @@ if __name__ == '__main__':
                                                                                     kind='bar', 
                                                                                     stacked=True,
                                                                                     color=balmorel_colours)
+    print(pro.pivot_table(index=['Model', 'F'], values='Value', aggfunc='sum'))
     ax.set_ylabel('Electricity Generation (TWh)')
     ax.legend(bbox_to_anchor=(1.05, .5), loc='center left')
     fig.savefig('Workflow/OverallResults/elec_gen.png', bbox_inches='tight')
