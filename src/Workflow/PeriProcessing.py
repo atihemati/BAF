@@ -866,13 +866,13 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
 
             # Set unserved energy cost for related region higher if it is below the virtual cost
             real_region_unc = unserved_energy_cost.getfloat('unserverdenergycost', region.lower())
-            if real_region_unc <= highest_price - 10:
-                unserved_energy_cost.set('unserverdenergycost', region.lower(), highest_price + 10)
+            if real_region_unc <= highest_price:
+                unserved_energy_cost.set('unserverdenergycost', region.lower(), str(highest_price + 10))
                 
             # Set hydrogen related power production cost between the two, so fuel cells don't supply heat or hydrogen
             conf = antares_input.thermal(region)
             fuelcell_cost = conf.getfloat('fuelcell_hydrogen', 'marginal-cost')
-            if fuelcell_cost <= highest_price - 10:
+            if fuelcell_cost <= highest_price:
                 conf.set('fuelcell_hydrogen', 'marginal-cost', str(highest_price + 5))
                 conf.set('fuelcell_hydrogen', 'market-bid-cost', str(highest_price + 5))
                 with open('Antares/input/thermal/clusters/%s/list.ini'%region.lower(), 'w') as f:
