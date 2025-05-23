@@ -5,9 +5,10 @@ Created on 30.03.2023 by
 IN ONE SENTENCE:
 Converts Balmorel results to Antares input
 
-ASSUMPTIONS IN SECTIONS:
-- 1.2 Peak production in VRE series = Peak capacity (but 5% loss inherent in profile, see Pre-Processing.py)
-- 4.3 Full transmission capacity available all hours 
+ASSUMPTIONS:
+- Peak production in VRE series = Peak capacity (but 5% loss inherent in profile, see Pre-Processing.py)
+- Full transmission capacity available all hours 
+- Hydrogen related power production (fuel cells) can't supply electricity for heat or hydrogen production
 
 OTHER:
 Read this script from the bottom and up to get an overview
@@ -860,9 +861,24 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
                 with open(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 'w') as f:
                     f.write("\n".join(list(availability[cluster].astype(str))))
             
-            # Save unserved energy cost
+            # Set unserved energy cost for virtual region
             unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))
 
+            # Set unserved energy cost for related region higher if it is below the virtual cost
+            real_region_unc = unserved_energy_cost.getfloat('unserverdenergycost', region.lower())
+            if real_region_unc <= highest_price - 10:
+                unserved_energy_cost.set('unserverdenergycost', region.lower(), highest_price + 10)
+                
+            # Set hydrogen related power production cost between the two, so fuel cells don't supply heat or hydrogen
+            conf = antares_input.thermal(region)
+            fuelcell_cost = conf.getfloat('fuelcell_hydrogen', 'marginal-cost')
+            if fuelcell_cost <= highest_price - 10:
+                conf.set('fuelcell_hydrogen', 'marginal-cost', str(highest_price + 5))
+                conf.set('fuelcell_hydrogen', 'market-bid-cost', str(highest_price + 5))
+                with open('Antares/input/thermal/clusters/%s/list.ini'%region.lower(), 'w') as f:
+                    conf.write(f)
+    
+    # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
         unserved_energy_cost.write(f)
 
