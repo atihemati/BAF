@@ -181,24 +181,24 @@ class BalmorelFullTimeseries:
 @click.argument('scenario', type=str)
 def main(scenario: str, dark_style: bool):
 
-    # Set global style of plot
+    # Parameters
     if dark_style:
         plt.style.use('dark_background')
         fc = 'none'
     else:
         fc = 'white'
         
-    # Load data
     model_year = 2050
     node_category = 'Area'
     node = 'DE_A'
     user = 'RESH'
-    commodity = 'heat'
+    
+    # Load data
     balmorel_input = BalmorelFullTimeseries()
-    profile = balmorel_input.get_input_profile(scenario, 2050, commodity, node, user)
+    balmorel_input.load_data(scenario)
     
     ## Efficiencies (for determining electricity consumption)
-    efficiencies = (
+    efficiency = (
         pd.read_csv('Balmorel/%s/model/GDATA.csv'%balmorel_input.model.scname_to_scfolder[scenario])
         .query('GDATASET == "GDFE"')
         .astype({'Val' : float})
@@ -210,17 +210,24 @@ def main(scenario: str, dark_style: bool):
         balmorel_input
         .results[scenario]
         .get_result('G_CAP_YCRAF')
-        .query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
     )
     stocap = (
         balmorel_input
         .results[scenario]
         .get_result('G_STO_YCRAF')
-        .query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
     ) 
 
-    # To what extend can other generation capacities fulfill demand?
-    print(profile - gencap['Value'].mul(1e3).sum())
+    # Iterate through geography and user scope
+    for commodity in balmorel_input.symbols.keys():
+        for i, (node, user) in balmorel_input.set[commodity].iterrows():
+            profile = balmorel_input.get_input_profile(scenario, model_year, commodity, node, user)
+            gen = gencap.query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
+            sto = stocap.query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
+            
+            # To what extend could full utilisation of capacities fulfill demand?
+            full_utilisation = profile - gen['Value'].mul(1e3).sum()
+            if (full_utilisation.values > 0).any():
+                print('Couldnt meet all hours for', node, user)
 
 
 
