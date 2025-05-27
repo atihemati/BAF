@@ -243,8 +243,8 @@ def main(scenario: str, dark_style: bool):
             LOLE_idx = (full_utilisation > 0).Value
             if LOLE_idx.any():
                 print('Couldnt meet all hours for', node, user)
-                print('ENS:', (full_utilisation.loc[LOLE_idx, 'Value'].sum() / 1e6).round())
-                print('LOLE:', full_utilisation.loc[LOLE_idx, 'Value'].count() )
+                print('ENS:', (full_utilisation.loc[LOLE_idx, 'Value'].sum() / 1e6).round(), 'TWh')
+                print('LOLE:', full_utilisation.loc[LOLE_idx, 'Value'].count(), 'h')
 
 
 
