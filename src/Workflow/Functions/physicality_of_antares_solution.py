@@ -62,6 +62,8 @@ class BalmorelFullTimeseries:
         
         self.results = {sc : False for sc in self.model.scenarios}
         
+        self.set = {com : False for com in symbols.keys()}
+        
     def load_data(self, scenario: str, **kwargs):
         """Load input data from Balmorel scenario. 
         NOTE: This might require a lot of RAM for large-scale scenarios, consider only loading pickled files instead of setting them all as attributes.
@@ -83,16 +85,24 @@ class BalmorelFullTimeseries:
                 # Does a pickle file exist and we don't want to overwrite?
                 if os.path.exists('%s_%s.pkl'%(file_base_name, self.symbols[commodity][i])) and not(overwrite):
                     with open(file_base_name + '_' + self.symbols[commodity][i] + '.pkl', 'rb') as f:
-                        setattr(self, self.symbols[commodity][i], pkl.load(f))
+                        f0 = pkl.load(f)
                         
                 # Load the symbols and create a pickle file
                 else:
                     f0 = symbol_to_df(self.model.input_data[sc_folder], self.symbols[commodity][i])
                     with open(file_base_name + '_' + self.symbols[commodity][i] + '.pkl', 'wb') as f:
                         pkl.dump(f0, f)
-                    setattr(self, self.symbols[commodity][i], f0)   
-
                 
+                setattr(self, self.symbols[commodity][i], f0)
+                
+                # Store scope of geography and users
+                if i == 0 and commodity != 'hydrogen':
+                    self.set[commodity] = f0[[self.symbols[commodity][3],
+                                              self.symbols[commodity][2]]].drop_duplicates()
+                elif i == 0 and commodity == 'hydrogen':
+                    temp = self.set['electricity'].rename(columns={'DEUSER' : self.symbols[commodity][2]})
+                    temp[self.symbols[commodity][2]] = 'H2USER'
+                    self.set[commodity] = temp.drop_duplicates()
         
     def get_input_profile(self, scenario: str, year: int, commodity: str, region: str, user: str, **kwargs):
         """Get the absolute profile from Balmorel input data. Assuming WEIGTH_S = 168 and WEIGHT_T = 1.
@@ -169,8 +179,7 @@ class BalmorelFullTimeseries:
 @click.command()
 @click.option('--dark-style', is_flag=True, required=False, help='Dark plot style')
 @click.argument('scenario', type=str)
-@click.argument('commodity', type=str)
-def main(scenario: str, commodity: str, dark_style: bool):
+def main(scenario: str, dark_style: bool):
 
     # Set global style of plot
     if dark_style:
@@ -184,8 +193,11 @@ def main(scenario: str, commodity: str, dark_style: bool):
     node_category = 'Area'
     node = 'DE_A'
     user = 'RESH'
+    commodity = 'heat'
     balmorel_input = BalmorelFullTimeseries()
     profile = balmorel_input.get_input_profile(scenario, 2050, commodity, node, user)
+    
+    ## Efficiencies (for determining electricity consumption)
     efficiencies = (
         pd.read_csv('Balmorel/%s/model/GDATA.csv'%balmorel_input.model.scname_to_scfolder[scenario])
         .query('GDATASET == "GDFE"')
@@ -193,7 +205,7 @@ def main(scenario: str, commodity: str, dark_style: bool):
         .pivot_table(index='GGG', values='Val')
     )
 
-    # Find capacities of other generation and storages
+    ## Find capacities of other generation and storages
     gencap = (
         balmorel_input
         .results[scenario]
@@ -207,7 +219,7 @@ def main(scenario: str, commodity: str, dark_style: bool):
         .query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
     ) 
 
-    # To what extend can other generation capacities fulfill demand
+    # To what extend can other generation capacities fulfill demand?
     print(profile - gencap['Value'].mul(1e3).sum())
 
 
