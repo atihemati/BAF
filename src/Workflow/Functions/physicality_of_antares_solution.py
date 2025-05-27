@@ -78,21 +78,30 @@ class BalmorelFullTimeseries:
         self.results[scenario] = MainResults(files='MainResults_%s.gdx'%scenario, paths='Balmorel/%s/model'%self.model.scname_to_scfolder[scenario])
         sc_folder = self.model.scname_to_scfolder[scenario]
         
+        geographic_sets = {
+            'AAA' : symbol_to_df(self.model.input_data[sc_folder], 'IA'),
+            'RRR' : symbol_to_df(self.model.input_data[sc_folder], 'IR')
+        }
+        
         # Load GAMS symbols from database
         for commodity in self.symbols.keys():
             file_base_name = f'Workflow/OverallResults/{scenario}_{commodity}'
             for i in range(2):
-                # Does a pickle file exist and we don't want to overwrite?
+                
                 if os.path.exists('%s_%s.pkl'%(file_base_name, self.symbols[commodity][i])) and not(overwrite):
+                    # Does a pickle file exist and we don't want to overwrite?
                     with open(file_base_name + '_' + self.symbols[commodity][i] + '.pkl', 'rb') as f:
-                        f0 = pkl.load(f)
-                        
-                # Load the symbols and create a pickle file
+                        f0 = pkl.load(f).rename(columns={'CCCRRRAAA' : 'RRR'})                    
                 else:
-                    f0 = symbol_to_df(self.model.input_data[sc_folder], self.symbols[commodity][i])
+                    # Load the symbols and create a pickle file
+                    f0 = symbol_to_df(self.model.input_data[sc_folder], self.symbols[commodity][i]).rename(columns={'CCCRRRAAA' : 'RRR'})
                     with open(file_base_name + '_' + self.symbols[commodity][i] + '.pkl', 'wb') as f:
                         pkl.dump(f0, f)
                 
+                # Filter geographic sets and store to attribute
+                node_name = self.symbols[commodity][3]
+                geoset = list(geographic_sets[node_name][node_name])
+                f0 = f0.query(f"{node_name} in {geoset}")
                 setattr(self, self.symbols[commodity][i], f0)
                 
                 # Store scope of geography and users
@@ -151,8 +160,8 @@ class BalmorelFullTimeseries:
         if commodity.lower() == 'hydrogen':
             # Only one user for hydrogen
             user = 'H2USER'
-            DC[user_name] = user
-            DC_VAR_T[user_name] = user
+            DC.loc[:, [user_name]] = user
+            DC_VAR_T.loc[:, [user_name]] = user
         
         # Query the choice of electricity or heat user
         querystring = f"{user_name} == '{user}'" 
@@ -210,24 +219,32 @@ def main(scenario: str, dark_style: bool):
         balmorel_input
         .results[scenario]
         .get_result('G_CAP_YCRAF')
+        .rename(columns={'Area' : 'AAA', 'Region' : 'RRR'})
     )
     stocap = (
         balmorel_input
         .results[scenario]
         .get_result('G_STO_YCRAF')
+        .rename(columns={'Area' : 'AAA', 'Region' : 'RRR'})
     ) 
 
     # Iterate through geography and user scope
     for commodity in balmorel_input.symbols.keys():
+        node_category = balmorel_input.symbols[commodity][3]
+        
         for i, (node, user) in balmorel_input.set[commodity].iterrows():
+            
             profile = balmorel_input.get_input_profile(scenario, model_year, commodity, node, user)
             gen = gencap.query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
             sto = stocap.query(f"Year == '{model_year}' and {node_category} == '{node}' and Commodity == '{commodity.upper()}'")
             
             # To what extend could full utilisation of capacities fulfill demand?
             full_utilisation = profile - gen['Value'].mul(1e3).sum()
-            if (full_utilisation.values > 0).any():
+            LOLE_idx = (full_utilisation > 0).Value
+            if LOLE_idx.any():
                 print('Couldnt meet all hours for', node, user)
+                print('ENS:', (full_utilisation.loc[LOLE_idx, 'Value'].sum() / 1e6).round())
+                print('LOLE:', full_utilisation.loc[LOLE_idx, 'Value'].count() )
 
 
 
