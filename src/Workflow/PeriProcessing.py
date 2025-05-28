@@ -28,8 +28,9 @@ import click
 import os
 import pickle
 import configparser
-from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, doLDC, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
+from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
 from Workflow.Functions.build_supply_curves import get_seasonal_curves
+from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
 
@@ -154,10 +155,6 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
 
     ## Hourly (Only needed for fuel cell)
     production_hourly = symbol_to_df(db, 'PRO_YCRAGFST').query('Technology == "FUELCELL"')
-
-    # Read the binding constraint
-    bc_config = configparser.ConfigParser()
-    bc_config.read('Antares/input/bindingconstraints/bindingconstraints.ini')
 
     # Placeholders for modulation and data
     thermal_modulation = '\n'.join(['1\t1\t1\t0' for i in range(8760)]) + '\n'
@@ -334,46 +331,6 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
             if temp.loc[temp.R == balmorel_region, 'Value'].sum()*1000 > 1e-6:   
                 eff += get_efficiency(cap, idx_cap & (cap.R == balmorel_region), GDATA)
                 N_reg += 1
-                    
-        # Efficiency 
-        generator = '{reg}%{tech}'.format(reg=region.lower(), tech='x_c3')
-        for section in bc_config.sections():
-            if generator in bc_config.options(section):
-                # print('%s is in section %s'%(generator, section))
-                # print('Setting %s to efficiency %0.2f'%(generator, eff))
-                bc_config.set(section, generator, str(round(eff, 6)))
-                
-                if tech_cap > 1e-5:
-                    # Convert to el capacity in
-                    eff = eff / N_reg
-                    tech_cap = tech_cap / eff
-                    
-                    print(region, 'Electrolyser\nCapacity: %0.2f MW_EL'%tech_cap)
-                    print('Efficiency: %0.2f pct\n'%(eff*100))
-                    
-                    bc_config.set(section, 'enabled', 'true')
-                else:
-                    bc_config.set(section, 'enabled', 'false')
-            
-            
-        
-        # Save it
-        try:
-            create_transmission_input('./', 'Antares', region.lower(), 'x_c3', 
-                                    [tech_cap, 0], 0) 
-            create_transmission_input('./', 'Antares', 'x_c3', 'z_h2_c3_' + region.lower(), 
-                                    [tech_cap*eff*1.01, 0], 0) # small overestimation of efficiency to take care of infeasibility due to rounding error (binding constraint should take care of correct flows however)
-        except FileNotFoundError:
-            print('No electrolyser option for %s\n'%region)
-
-        # Save technoeconomic data to file
-        fAntTechno.loc[(i, year, region, 'electrolyser'), 'OPEX'] = mc_cost
-        fAntTechno.loc[(i, year, region, 'electrolyser'), 'Power Capacity'] = tech_cap 
-
-    # Save configfile
-    with open('Antares/input/bindingconstraints/bindingconstraints.ini', 'w') as configfile:
-        bc_config.write(configfile)
-    bc_config.clear()
     
     return fAntTechno
 
@@ -786,8 +743,110 @@ def antares_weekly_resource_constraints(
         # Done. Don't have to do this for the next region in the same country
         CCCRRR.loc[country, 'Done?'] = True
 
+def demand_response_constraint_RHS(scenario: str, year: int, 
+                               commodity: str, node: str, 
+                               balmorel_timeseries: BalmorelFullTimeseries):
+    """Creates the RHS for a constraint limiting the hourly supply of electricity to heat or hydrogen
+
+    Args:
+        scenario (str): _description_
+        year (int): _description_
+        commodity (str): _description_
+        node (str): _description_
+        balmorel_timeseries (BalmorelFullTimeseries): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    
+    commodity = commodity.lower()
+    users = (
+        balmorel_timeseries.set[commodity]
+        .query(f"{balmorel_timeseries.symbols[commodity]['node_name']} == '{node}'")
+        [balmorel_timeseries.symbols[commodity]['user']].unique()
+    )
+    
+    # Read demand profile, storage capacities and transmission capacity
+    
+    ## Demand from all users
+    demand = np.zeros(8736)
+    for user in users:
+        demand += balmorel_timeseries.get_input_profile(scenario, year, commodity, node, user).values[:,0]
+    
+    ## Storage capacity
+    storage = (
+        balmorel_timeseries
+        .results[scenario]
+        .get_result('G_CAP_YCRAF')
+        .rename(columns={'Region' : 'RRR', 'Area' : 'AAA'})
+        .query(f'Year == "{year}" and Commodity == "{commodity.upper()}" and {balmorel_timeseries.symbols[commodity]['node_name']} == "{node}" and Technology in ["INTERSEASONAL-HEAT-STORAGE", "INTRASEASONAL-HEAT-STORAGE", "H2-STORAGE"]')
+        ['Value']
+        .mul(1e3)
+        .sum()
+    )
+    
+    ## Export capacity
+    if commodity == 'hydrogen':
+        transmission = (
+            balmorel_timeseries
+            .results[scenario]
+            .get_result('XH2_CAP_YCR')
+            .query(f"From == '{node}'")
+            ['Value']
+            .mul(1e3)
+            .sum()
+        )
+    else:
+        transmission = 0
+    
+    return demand + storage + transmission
+    
+def create_demand_response_hourly_constraint(scenario: str,  year: int):
+    
+    balmorel_timeseries = BalmorelFullTimeseries()
+    balmorel_timeseries.load_data(scenario, overwrite=False) # NOTE: Change to overwrite True when you are finished testing
+    
+    # Load RRRAAA
+    sc_folder = balmorel_timeseries.model.scname_to_scfolder[scenario]
+    RRRAAA = symbol_to_df(balmorel_timeseries.model.input_data[sc_folder], 'RRRAAA')
+    
+    # Load electricity nodes from balmorel_timeseries
+    electricity_regions = balmorel_timeseries.set['electricity']['RRR'].unique()
+    
+    # Load heat nodes
+    heat_nodes = balmorel_timeseries.set['heat']['AAA'].unique()
+    
+    # Load binding constraints
+    bc_path = "Antares/input/bindingconstraints"
+    
+    # Go through  regions
+    for region in electricity_regions:
+
+        heat_nodes_in_region = [node for node in heat_nodes if node in RRRAAA.query('RRR == @region')['AAA'].unique()]
+
+        heat_RHS = np.zeros(8736)
+        for node in heat_nodes_in_region:
+            heat_RHS += demand_response_constraint_RHS(scenario, year, 'heat', node, balmorel_timeseries)
+    
+        with open('/'.join([bc_path, f'{region.lower()}_heat_lt.txt']), 'w') as f:
+            f.write("\n".join([str(n) for n in heat_RHS]))
+            f.write("\n".join(['0' for i in range(49)]))
+
+        hydrogen_RHS = demand_response_constraint_RHS(scenario, year, 'hydrogen', region, balmorel_timeseries)
+    
+        with open('/'.join([bc_path, f'{region.lower()}_hydrogen_lt.txt']), 'w') as f:
+            f.write("\n".join([str(n) for n in hydrogen_RHS]))
+            f.write("\n".join(['0' for i in range(49)]))
+    
 
 def create_demand_response(scenario: str, year: int, gams_system_directory: str = None):
+    """Create demand response curves for all hours per season
+
+    Args:
+        scenario (str): Scenario
+        year (int): Model year
+        gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
+    """
     curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory)
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
@@ -1015,7 +1074,7 @@ def peri_process(sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(SC, year, gams_system_directory=gams_system_directory)
+    create_demand_response_hourly_constraint(SC, year)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')

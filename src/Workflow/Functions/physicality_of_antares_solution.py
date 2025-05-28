@@ -53,10 +53,10 @@ class BalmorelFullTimeseries:
         T = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)] 
         self.profile_index = pd.MultiIndex.from_product((S, T))
 
-        self.symbols = {key : [symbols[key], 
-                               '%s_VAR_T'%symbols[key],
-                               '%sUSER'%symbols[key],
-                               node_name[key]] for key in symbols.keys()}
+        self.symbols = {key : {'annual' : symbols[key], 
+                               'series' : '%s_VAR_T'%symbols[key],
+                               'user' : '%sUSER'%symbols[key],
+                               'node_name' : node_name[key]} for key in symbols.keys()}
         
         self.profiles = {sc : {com : {} for com in symbols.keys()} for sc in sc_folders}
         
@@ -86,7 +86,7 @@ class BalmorelFullTimeseries:
         # Load GAMS symbols from database
         for commodity in self.symbols.keys():
             file_base_name = f'Workflow/OverallResults/{scenario}_{commodity}'
-            for i in range(2):
+            for i in ['annual', 'series']:
                 
                 if os.path.exists('%s_%s.pkl'%(file_base_name, self.symbols[commodity][i])) and not(overwrite):
                     # Does a pickle file exist and we don't want to overwrite?
@@ -99,18 +99,18 @@ class BalmorelFullTimeseries:
                         pkl.dump(f0, f)
                 
                 # Filter geographic sets and store to attribute
-                node_name = self.symbols[commodity][3]
+                node_name = self.symbols[commodity]['node_name']
                 geoset = list(geographic_sets[node_name][node_name])
                 f0 = f0.query(f"{node_name} in {geoset}")
                 setattr(self, self.symbols[commodity][i], f0)
                 
                 # Store scope of geography and users
-                if i == 0 and commodity != 'hydrogen':
-                    self.set[commodity] = f0[[self.symbols[commodity][3],
-                                              self.symbols[commodity][2]]].drop_duplicates()
-                elif i == 0 and commodity == 'hydrogen':
-                    temp = self.set['electricity'].rename(columns={'DEUSER' : self.symbols[commodity][2]})
-                    temp[self.symbols[commodity][2]] = 'H2USER'
+                if i == 'annual' and commodity != 'hydrogen':
+                    self.set[commodity] = f0[[self.symbols[commodity]['node_name'],
+                                              self.symbols[commodity]['user']]].drop_duplicates()
+                elif i == 'annual' and commodity == 'hydrogen':
+                    temp = self.set['electricity'].rename(columns={'DEUSER' : self.symbols[commodity]['user']})
+                    temp[self.symbols[commodity]['user']] = 'H2USER'
                     self.set[commodity] = temp.drop_duplicates()
         
     def get_input_profile(self, scenario: str, year: int, commodity: str, region: str, user: str, **kwargs):
@@ -143,16 +143,16 @@ class BalmorelFullTimeseries:
         
         # If not, start loading symbols
         try:
-            DC = getattr(self, self.symbols[commodity][0])
-            DC_VAR_T = getattr(self, self.symbols[commodity][1])
+            DC = getattr(self, self.symbols[commodity]['annual'])
+            DC_VAR_T = getattr(self, self.symbols[commodity]['series'])
         except KeyError:
             raise KeyError(f"Commodity '{commodity}' not yet covered by the BalmorelDemandProfileData class")
             
         # Region and year filtering
         year = str(year)
         region = region.upper()
-        user_name = self.symbols[commodity][2]
-        node_name = self.symbols[commodity][3]
+        user_name = self.symbols[commodity]['user']
+        node_name = self.symbols[commodity]['node_name']
         DC = DC.query(f'YYY == @year and {node_name} == @region')
         DC_VAR_T = DC_VAR_T.query(f'{node_name} == @region')
         
@@ -230,7 +230,7 @@ def main(scenario: str, dark_style: bool):
 
     # Iterate through geography and user scope
     for commodity in balmorel_input.symbols.keys():
-        node_category = balmorel_input.symbols[commodity][3]
+        node_category = balmorel_input.symbols[commodity]['node_name']
         
         for i, (node, user) in balmorel_input.set[commodity].iterrows():
             
