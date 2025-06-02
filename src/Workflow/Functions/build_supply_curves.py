@@ -54,7 +54,7 @@ def small_number_to_zero(number: float):
         number = 0
     return number
 
-def seasonal_colors(num_seasons: int):
+def seasonal_colors(num_seasons: int, style: str):
     """Create colors for all S01-SNM seasons, that are more red in the middle
 
     Args:
@@ -68,12 +68,15 @@ def seasonal_colors(num_seasons: int):
         distance_from_mid = abs(i - (num_seasons / 2 + 0.5)) / (num_seasons / 2)
         
         # Red component: max at midpoint, min at endpoints
-        red = 1.0 - distance_from_mid
+        color = 1.0 - distance_from_mid
         # Black components: min at midpoint, max at endpoints
-        black = distance_from_mid
+        other_color = distance_from_mid
         
         season_key = f'S{i:02d}'
-        colors[season_key] = mcolors.to_hex([red, 0, 0, 0.5])  # Red component varies, others fixed. .to_hex used to avoid color map warning
+        if style == 'report':
+            colors[season_key] = mcolors.to_hex([color, 0, 0, 0.5])  # Red component varies, others fixed. .to_hex used to avoid color map warning
+        else:
+            colors[season_key] = mcolors.to_hex([1, other_color, other_color, 0.5])  # Red component varies, others fixed. .to_hex used to avoid color map warning
     
     return colors
 
@@ -148,7 +151,8 @@ def combine_multiple_supply_curves(x_list, y_list):
     return combined_x, combined_y
 
 def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = False,
-                        plot_all_curves: bool = False, gams_system_directory: str = None):
+                        plot_all_curves: bool = False, gams_system_directory: str = None,
+                        style: str = 'report'):
     """Create seasonal curves for hydrogen and heat for every region in a scenario 
 
     Args:
@@ -175,7 +179,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
     seasons.sort()
     if plot_all_curves or plot_overall_curves:
         # Create a color dictionary for seasons
-        colors = seasonal_colors(52)
+        colors = seasonal_colors(52, style)
         
     # Prepare fit result data
     resulting_curves = {commodity : {region : {season : {} for season in seasons} for region in regions} for commodity in commodities}        
@@ -184,7 +188,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
     
         for region in regions:
                     
-            fig_season, ax_season = plt.subplots()
+            fig_season, ax_season = plt.subplots(facecolor='none')
             for season in seasons:
             
                 supply_curves_x, supply_curves_y = [], []
@@ -220,6 +224,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
                             ax.set_ylabel(f'{tech} (MWh)')
                             ax.set_xlabel('Electricity Price (€/MWh)')
                             ax.set_title(area)
+                            ax.legend(loc='center left', bbox_to_anchor=(1.05, .5))
                             fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{season}.png', bbox_inches='tight')
                         
                 if len(supply_curves_x) != 0:
@@ -238,9 +243,11 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
             if plot_all_curves or plot_overall_curves:
                 ax_season.set_title('Supply Curve for %s in %s'%(commodity, region))
                 ax_season.set_ylabel('MWh')
-                ax_season.set_xlabel('€/MWh')    
-                ax_season.legend()    
-                fig_season.savefig('Workflow/OverallResults/supply_curve_%s_%s.png'%(commodity, region))
+                ax_season.set_xlabel('€/MWh')
+                ax_season.set_facecolor('none')
+                ax_season.legend(loc='center left', bbox_to_anchor=(1.05, .5))
+                fig_season.savefig('Workflow/OverallResults/supply_curve_%s_%s.png'%(commodity, region),
+                                   bbox_inches='tight')
                 
     return resulting_curves
 

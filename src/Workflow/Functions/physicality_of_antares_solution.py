@@ -30,9 +30,9 @@ class BalmorelFullTimeseries:
         Note that WEIGTH_S = 168 and WEIGHT_T = 1 is assumed.
         """
         
-        gams_dir = kwargs.pop('gams_system_directory', None)
+        self.gams_dir = kwargs.pop('gams_system_directory', None)
         
-        self.model = Balmorel('Balmorel', gams_system_directory=gams_dir)
+        self.model = Balmorel('Balmorel', gams_system_directory=self.gams_dir)
         self.model.locate_results()
         sc_folders = self.model.scfolder_to_scname.keys()
         
@@ -75,7 +75,7 @@ class BalmorelFullTimeseries:
         # Load GAMS database
         overwrite = kwargs.pop('overwrite', False)
         self.model.load_incfiles(self.model.scname_to_scfolder[scenario], overwrite=overwrite)
-        self.results[scenario] = MainResults(files='MainResults_%s.gdx'%scenario, paths='Balmorel/%s/model'%self.model.scname_to_scfolder[scenario])
+        self.results[scenario] = MainResults(files='MainResults_%s.gdx'%scenario, paths='Balmorel/%s/model'%self.model.scname_to_scfolder[scenario], system_directory=self.gams_dir)
         sc_folder = self.model.scname_to_scfolder[scenario]
         
         geographic_sets = {

@@ -801,9 +801,9 @@ def demand_response_constraint_RHS(scenario: str, year: int,
     
     return demand + storage + transmission
     
-def create_demand_response_hourly_constraint(scenario: str,  year: int):
+def create_demand_response_hourly_constraint(scenario: str,  year: int, gams_system_directory: str):
     
-    balmorel_timeseries = BalmorelFullTimeseries()
+    balmorel_timeseries = BalmorelFullTimeseries(gams_system_directory=gams_system_directory)
     balmorel_timeseries.load_data(scenario, overwrite=False) # NOTE: Change to overwrite True when you are finished testing
     
     # Load RRRAAA
@@ -839,7 +839,7 @@ def create_demand_response_hourly_constraint(scenario: str,  year: int):
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(scenario: str, year: int, gams_system_directory: str = None):
+def create_demand_response(scenario: str, year: int, gams_system_directory: str = None, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -847,7 +847,7 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
         year (int): Model year
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
-    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory)
+    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory, style=style)
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
     
@@ -1074,7 +1074,8 @@ def peri_process(sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response_hourly_constraint(SC, year)
+    create_demand_response(SC, year, gams_system_directory, style)
+    create_demand_response_hourly_constraint(SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')
