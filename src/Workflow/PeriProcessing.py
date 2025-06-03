@@ -854,7 +854,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, style:
 
     curves = {}
     antares_input = AntaresInput('Antares')
-    commodities = curves.keys()
+    commodities = ['HEAT', 'HYDROGEN']
     
     fuel_consumption = result.get_result('F_CONS_YCRAST')
     el_prices = result.get_result('EL_PRICE_YCRST')
@@ -864,7 +864,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, style:
     
     for commodity in commodities:
         
-        parameters = get_parameters_for_supply_curve_fit(commodity)
+        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity)
         curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         
@@ -1085,7 +1085,7 @@ def peri_process(sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(res, SC, year, gams_system_directory, style)
+    create_demand_response(res, SC, year, style)
     create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   

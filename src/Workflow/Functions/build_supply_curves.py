@@ -14,18 +14,32 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
 from pybalmorel import Balmorel, MainResults
+from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 
 ### ------------------------------- ###
 ###           1. Functions          ###
 ### ------------------------------- ###
 
-def get_residual_load():
+def get_inverse_residual_load(result: MainResults, scenario: str, year: int, commodity: str):
+    
+    # Load data
+    
+    ## Get all indices from electricity price, which is guaranteed to have a value for all indices
+    all_index = result.get_result('EL_PRICE_YCRST').pivot_table(index=['Region', 'Season', 'Time'], values='Value').index
+    
+    ## Actual Data
+    production = result.get_result('PRO_YCRAGFST').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    curtailment = result.get_result('CURT_YCRAGFST').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=all_index, fill_value=0)
+    el_demand = result.get_result('EL_DEMAND_YCRST').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    
+    inverse_residual_load = production + curtailment - el_demand
+    
+    return inverse_residual_load.reset_index()
+
+def get_heat_demand(result: MainResults):
     pass
 
-def get_heat_demand():
-    pass
-
-def get_parameters_for_supply_curve_fit(commodity: str):
+def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str):
     """Get parameters for supply curve fitting depending on the commodity
 
     Args:
@@ -39,9 +53,9 @@ def get_parameters_for_supply_curve_fit(commodity: str):
     """
     
     if commodity.upper() == 'HEAT':
-        return get_residual_load()
+        return get_inverse_residual_load(result, scenario, year, commodity)
     elif commodity.upper() == 'HYDROGEN':
-        return get_heat_demand()
+        return get_heat_demand(result, scenario, year, commodity)
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
