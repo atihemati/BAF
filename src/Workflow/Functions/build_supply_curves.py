@@ -150,7 +150,7 @@ def combine_multiple_supply_curves(x_list, y_list):
     
     return combined_x, combined_y
 
-def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = False,
+def get_supply_curves(scenario: str, year: int, plot_overall_curves: bool = False,
                         plot_all_curves: bool = False, gams_system_directory: str = None,
                         style: str = 'report'):
     """Create seasonal curves for hydrogen and heat for every region in a scenario 
@@ -175,27 +175,27 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
     # Prepare parameters to iterate through and colors for plotting them
     commodities = ['HEAT', 'HYDROGEN']
     regions = df1_temp.Region.unique()
-    seasons = list(df1_temp.Season.unique())
-    seasons.sort()
+    parameters = list(df1_temp.Season.unique())
+    parameters.sort()
     if plot_all_curves or plot_overall_curves:
         # Create a color dictionary for seasons
         colors = seasonal_colors(52, style)
         
     # Prepare fit result data
-    resulting_curves = {commodity : {region : {season : {} for season in seasons} for region in regions} for commodity in commodities}        
+    resulting_curves = {commodity : {region : dict() for region in regions} for commodity in commodities}        
     
     for commodity in commodities:  
     
         for region in regions:
-                    
+
             fig_season, ax_season = plt.subplots(facecolor='none')
-            for season in seasons:
+            for parameter in parameters:
             
                 supply_curves_x, supply_curves_y = [], []
                 
                 for area in df1_temp.query('Region == @region').Area.unique():
                     
-                    df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Commodity==@commodity and Season == @season').pivot_table(index='Time', columns='Generation', values='Value')
+                    df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Commodity==@commodity and Season == @parameter').pivot_table(index='Time', columns='Generation', values='Value')
 
                     for tech in df1.columns:
                         
@@ -204,7 +204,7 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
                             continue
                         
                         # df1=m.results.get_result('EL_DEMAND_YCRST').query('Scenario=="base"').pivot_table(index=['Season','Time'], columns='Category', values='Value')
-                        df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @season').pivot_table(index='Time', values='Value')
+                        df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @parameter').pivot_table(index='Time', values='Value')
 
                         temp=df1[[tech]].merge(df2[['Value']],left_index=True, right_index=True).fillna(0)
 
@@ -219,23 +219,23 @@ def get_seasonal_curves(scenario: str, year: int, plot_overall_curves: bool = Fa
                         if plot_all_curves:
                             fig, ax = plt.subplots()
                             temp.plot(kind='scatter', x='Value', y=tech, ax=ax, 
-                                        label=season, color=colors[season])
+                                        label=parameter, color=colors[parameter])
                             ax.plot(fit_x, fit_y)
                             ax.set_ylabel(f'{tech} (MWh)')
                             ax.set_xlabel('Electricity Price (€/MWh)')
                             ax.set_title(area)
                             ax.legend(loc='center left', bbox_to_anchor=(1.05, .5))
-                            fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{season}.png', bbox_inches='tight')
+                            fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{parameter}.png', bbox_inches='tight')
                         
                 if len(supply_curves_x) != 0:
                     combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
                     
                     # Plot overall curve    
                     if plot_all_curves or plot_overall_curves:
-                        ax_season.plot(combined_x, combined_y, color=colors[season], label=season)
+                        ax_season.plot(combined_x, combined_y, color=colors[parameter], label=parameter)
     
                 # Store seasonal curves   
-                resulting_curves[commodity][region][season] = {'price' : np.round(combined_x),
+                resulting_curves[commodity][region][parameter] = {'price' : np.round(combined_x),
                                                                 'capacity' : np.round(combined_y)}
     
     
@@ -257,4 +257,5 @@ if __name__ == "__main__":
     scenario = 'baf_test_Iter0'
     year = 2050
 
-    resulting_curves = get_seasonal_curves(scenario, year, plot_overall_curves=True)
+    resulting_curves = get_supply_curves(scenario, year, plot_overall_curves=True)
+    print(resulting_curves)

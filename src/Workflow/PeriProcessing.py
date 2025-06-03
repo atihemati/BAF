@@ -29,7 +29,7 @@ import os
 import pickle
 import configparser
 from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
-from Workflow.Functions.build_supply_curves import get_seasonal_curves
+from Workflow.Functions.build_supply_curves import get_supply_curves
 from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
@@ -847,7 +847,7 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
         year (int): Model year
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
-    curves = get_seasonal_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory, style=style)
+    curves = get_supply_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory, style=style)
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
     
