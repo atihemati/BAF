@@ -839,7 +839,7 @@ def create_demand_response_hourly_constraint(scenario: str,  year: int, gams_sys
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(scenario: str, year: int, gams_system_directory: str = None, style: str = 'report'):
+def create_demand_response(scenario: str, year: int, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -847,7 +847,8 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
         year (int): Model year
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
-    curves = get_supply_curves(scenario, year, plot_overall_curves=True, gams_system_directory=gams_system_directory, style=style)
+
+    curves = {}
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
     
@@ -855,8 +856,9 @@ def create_demand_response(scenario: str, year: int, gams_system_directory: str 
     unserved_energy_cost.read('Antares/input/thermal/areas.ini')
     
     for commodity in commodities:
-        
+        curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
+        
         for region in regions:
             
             # Delete all thermal clusters in virtual region
