@@ -856,7 +856,7 @@ def create_demand_response(scenario: str, year: int, style: str = 'report'):
     unserved_energy_cost.read('Antares/input/thermal/areas.ini')
     
     for commodity in commodities:
-        curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, plot_overall_curves=True, style=style)
+        curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         
         for region in regions:

@@ -154,7 +154,7 @@ def get_supply_curves(scenario: str,
                       year: int, 
                       commodity: str, 
                       parameters: pd.DataFrame,
-                      production: pd.DataFrame, 
+                      fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
@@ -166,6 +166,8 @@ def get_supply_curves(scenario: str,
         year (int): The model year
         commodity (str): The commodity
         parameters (pd.DataFrame): The dataframe containing the parameter value for all season and time steps
+        fuel_consumption (pd.DataFrame): Fuel consumption results. 
+        el_prices (pd.DataFrame): Electricity prices
         plot_overall_curves (bool, optional): Plot regional heat and hydrogen supply curves?
         plot_all_curves (bool, optional): Plot stepfunction fit of ALL technologies and regional heat and hydrogen supply curves?
         style (str, optional): Style of supply curve plot. Defaults to 'report'.
@@ -175,7 +177,8 @@ def get_supply_curves(scenario: str,
     """
 
     year = str(year)
-    df1_temp = production.query('Year == @year')
+    technology = 'ELECT-TO-HEAT' if commodity == 'HEAT' else 'ELECTROLYZER'
+    df1_temp = fuel_consumption.query('Year == @year and Technology == @technology')
     df2_temp = el_prices.query('Year == @year')
     
     # Prepare parameters to iterate through and colors for plotting them
@@ -203,7 +206,7 @@ def get_supply_curves(scenario: str,
             
             for area in df1_temp.query('Region == @region').Area.unique():
                 
-                df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Commodity==@commodity and Season == @season and Time == @time').pivot_table(index='Time', columns='Generation', values='Value')
+                df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Season == @season and Time == @time').pivot_table(index=['Season', 'Time'], columns='Generation', values='Value')
 
                 for tech in df1.columns:
                     
@@ -211,9 +214,9 @@ def get_supply_curves(scenario: str,
                     if df1.loc[:, tech].max() < 1e-5:
                         continue
                     
-                    df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @season and Time == @time').pivot_table(index='Time', values='Value')
+                    df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @season and Time == @time').pivot_table(index=['Season', 'Time'], values='Value')
 
-                    temp=df1[[tech]].merge(df2[['Value']],left_index=True, right_index=True).fillna(0)
+                    temp=df1[[tech]].merge(df2[['Value']], left_index=True, right_index=True).fillna(0)
 
                     # Piecewise linear fit
                     fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
@@ -266,19 +269,20 @@ if __name__ == "__main__":
     commodities = ['HEAT', 'HYDROGEN']
     resulting_curves = {}
     
-    # Get Balmorel Results
+    ## Get Balmorel Results
     gams_system_directory = 'C:/GAMS/47'
     m=Balmorel('Balmorel')
     m.locate_results()
     res = MainResults('MainResults_' + scenario + '.gdx',
                       paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model', 
                       system_directory=gams_system_directory)
-    production = res.get_result('PRO_YCRAGFST')
+    production = res.get_result('F_CONS_YCRAST')
     el_prices= res.get_result('EL_PRICE_YCRST')
     
-    # Prepare parameters to fit
+    ## Prepare parameters to fit
     parameters = el_prices.round({'Value' : 0}).pivot_table(index=['Region', 'Season', 'Time'], values='Value').reset_index().rename(columns={'Value' : 'Elprice'})
-    print(parameters)
+    
+    ## Make curves
     for commodity in commodities:  
         resulting_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, plot_overall_curves=True)
     
