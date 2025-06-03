@@ -53,9 +53,9 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     """
     
     if commodity.upper() == 'HEAT':
-        return get_inverse_residual_load(result, scenario, year, commodity)
-    elif commodity.upper() == 'HYDROGEN':
         return get_heat_demand(result, scenario, year, commodity)
+    elif commodity.upper() == 'HYDROGEN':
+        return get_inverse_residual_load(result, scenario, year, commodity)
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
