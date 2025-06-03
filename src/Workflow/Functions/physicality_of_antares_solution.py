@@ -25,14 +25,18 @@ from pybalmorel.utils import symbol_to_df
 ### ------------------------------- ###
 
 class BalmorelFullTimeseries:
-    def __init__(self, **kwargs):
+    def __init__(self, model: Balmorel = None, **kwargs):
         """A class to load the entire, absolute profiles (scaled by annual demands) from Balmorel input.
         Note that WEIGTH_S = 168 and WEIGHT_T = 1 is assumed.
         """
         
         self.gams_dir = kwargs.pop('gams_system_directory', None)
         
-        self.model = Balmorel('Balmorel', gams_system_directory=self.gams_dir)
+        if model == None:
+            self.model = Balmorel('Balmorel', gams_system_directory=self.gams_dir)
+        else:
+            self.model = model
+        
         self.model.locate_results()
         sc_folders = self.model.scfolder_to_scname.keys()
         

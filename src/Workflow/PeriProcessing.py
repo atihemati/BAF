@@ -29,11 +29,14 @@ import os
 import pickle
 import configparser
 from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
-from Workflow.Functions.build_supply_curves import get_supply_curves
+from Workflow.Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit
 from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
-from pybalmorel import Balmorel
+from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
 
+#%% ------------------------------- ###
+###           1. Functions          ###
+### ------------------------------- ###
 def antares_vre_capacities(db: gams.GamsDatabase,
                            B2A_ren: dict, A2B_regi: dict,
                            GDATA: pd.DataFrame, ANNUITYCG: pd.DataFrame,
@@ -801,9 +804,9 @@ def demand_response_constraint_RHS(scenario: str, year: int,
     
     return demand + storage + transmission
     
-def create_demand_response_hourly_constraint(scenario: str,  year: int, gams_system_directory: str):
+def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  year: int, gams_system_directory: str):
     
-    balmorel_timeseries = BalmorelFullTimeseries(gams_system_directory=gams_system_directory)
+    balmorel_timeseries = BalmorelFullTimeseries(model, gams_system_directory=gams_system_directory)
     balmorel_timeseries.load_data(scenario, overwrite=False) # NOTE: Change to overwrite True when you are finished testing
     
     # Load RRRAAA
@@ -839,10 +842,11 @@ def create_demand_response_hourly_constraint(scenario: str,  year: int, gams_sys
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(scenario: str, year: int, style: str = 'report'):
+def create_demand_response(result: MainResults, scenario: str, year: int, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
+        result (MainResults): The MainResults class
         scenario (str): Scenario
         year (int): Model year
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
@@ -852,10 +856,15 @@ def create_demand_response(scenario: str, year: int, style: str = 'report'):
     antares_input = AntaresInput('Antares')
     commodities = curves.keys()
     
+    fuel_consumption = result.get_result('F_CONS_YCRAST')
+    el_prices = result.get_result('EL_PRICE_YCRST')
+    
     unserved_energy_cost = configparser.ConfigParser()
     unserved_energy_cost.read('Antares/input/thermal/areas.ini')
     
     for commodity in commodities:
+        
+        parameters = get_parameters_for_supply_curve_fit(commodity)
         curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         
@@ -943,6 +952,10 @@ def create_demand_response(scenario: str, year: int, style: str = 'report'):
     with open('Antares/input/thermal/areas.ini', 'w') as f:
         unserved_energy_cost.write(f)
 
+#%% ------------------------------- ###
+###         2. Main Function        ###
+### ------------------------------- ###
+
 def peri_process(sc_name: str, year: str):
     """The processing of results from Balmorel to Antares
 
@@ -1019,7 +1032,6 @@ def peri_process(sc_name: str, year: str):
     m.load_incfiles(SC_folder)
     electricity_demand = symbol_to_df(m.input_data[SC_folder], 'DE')
     electricity_profiles = symbol_to_df(m.input_data[SC_folder], 'DE_VAR_T')
-    del m # release some memory
 
     ## Input data from the latest run    
     ws = gams.GamsWorkspace(system_directory=gams_system_directory)
@@ -1039,29 +1051,26 @@ def peri_process(sc_name: str, year: str):
 
     ## Loading MainResults
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
-    ws = gams.GamsWorkspace(system_directory=gams_system_directory)
-    mainresults_path = pathlib.Path('Balmorel/%s/model/MainResults_%s.gdx'%(SC_folder, SC))
-    db = ws.add_database_from_gdx(str(mainresults_path.resolve()))
-
+    res = MainResults(files='MainResults_%s.gdx'%SC, paths='Balmorel/%s/model/'%SC_folder, system_directory=gams_system_directory)
 
     # Renewable Capacities
-    fAntTechno, cap = antares_vre_capacities(db, B2A_ren, A2B_regi, 
+    fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
                                              GDATA, ANNUITYCG,
                                              fAntTechno, i, year)
             
     # Thermal Capacities
-    fAntTechno = antares_thermal_capacities(db, A2B_regi, A2B_regi_h2, 
+    fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
                                             BalmTechs, GDATA, FPRICE, 
                                             FDATA, EMI_POL, ANNUITYCG, 
                                             cap, i, year, fAntTechno)
 
     # Storage Capacities
-    fAntTechno = antares_storage_capacities(db, A2B_regi, 
+    fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
                                             cap, GDATA, ANNUITYCG,
                                             fAntTechno, i, year)            
 
     # Transmission Capacities
-    antares_transmission_capacities(db, A2B_regi,
+    antares_transmission_capacities(res.db[SC], A2B_regi,
                                     A2B_regi_h2, year)    
 
     # Exogenous Electricity Demand Profile
@@ -1076,8 +1085,8 @@ def peri_process(sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(SC, year, gams_system_directory, style)
-    create_demand_response_hourly_constraint(SC, year, gams_system_directory)
+    create_demand_response(res, SC, year, gams_system_directory, style)
+    create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')

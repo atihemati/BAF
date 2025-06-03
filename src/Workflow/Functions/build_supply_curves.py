@@ -15,7 +15,47 @@ import matplotlib.colors as mcolors
 import pandas as pd
 from pybalmorel import Balmorel, MainResults
 
+### ------------------------------- ###
+###           1. Functions          ###
+### ------------------------------- ###
+
+def get_residual_load():
+    pass
+
+def get_heat_demand():
+    pass
+
+def get_parameters_for_supply_curve_fit(commodity: str):
+    """Get parameters for supply curve fitting depending on the commodity
+
+    Args:
+        commodity (str): Either 'HEAT' or 'HYDROGEN'
+    
+    Raises:
+        ValueError: If choice is not 'HEAT' or 'HYDROGEN'
+
+    Returns:
+        parameters (pd.DataFrame): The parameters to fit with columns [parameter_name, 'Region', 'Season', 'Time'] 
+    """
+    
+    if commodity.upper() == 'HEAT':
+        return get_residual_load()
+    elif commodity.upper() == 'HYDROGEN':
+        return get_heat_demand()
+    else:
+        raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
+
+
 def get_supply_curve(x: np.array, y: np.array):
+    """A function to construct a supply curve depending on x and y data
+
+    Args:
+        x (np.array): Typically electricity prices in €/MWh
+        y (np.array): Typically electricity demands in MWh
+
+    Returns:
+        fit_x, fit_y (list, list): The 'fitted' curve in x and y coordinates
+    """
     
     df = pd.DataFrame({'x' : x,
                        'y' : y})
@@ -165,9 +205,9 @@ def get_supply_curves(scenario: str,
         scenario (str): Scenario to analyse
         year (int): The model year
         commodity (str): The commodity
-        parameters (pd.DataFrame): The dataframe containing the parameter value for all season and time steps
+        parameters (pd.DataFrame): The dataframe containing the parameter values for all regions, seasons and time steps with columns ['Region', 'Season', 'Time']
         fuel_consumption (pd.DataFrame): Fuel consumption results. 
-        el_prices (pd.DataFrame): Electricity prices
+        el_prices (pd.DataFrame): Electricity prices.
         plot_overall_curves (bool, optional): Plot regional heat and hydrogen supply curves?
         plot_all_curves (bool, optional): Plot stepfunction fit of ALL technologies and regional heat and hydrogen supply curves?
         style (str, optional): Style of supply curve plot. Defaults to 'report'.
@@ -177,7 +217,8 @@ def get_supply_curves(scenario: str,
     """
 
     year = str(year)
-    technology = 'ELECT-TO-HEAT' if commodity == 'HEAT' else 'ELECTROLYZER'
+    commodity2technology = {'HEAT' : 'ELECT-TO-HEAT', 'HYDROGEN' : 'ELECTROLYZER'}
+    technology = commodity2technology[commodity]
     df1_temp = fuel_consumption.query('Year == @year and Technology == @technology')
     df2_temp = el_prices.query('Year == @year')
     
@@ -185,10 +226,6 @@ def get_supply_curves(scenario: str,
     regions = df1_temp.Region.unique()
     parameter_name = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])][0]
 
-    # if plot_all_curves or plot_overall_curves:
-    #     # Create a color dictionary for seasons
-    #     colors = seasonal_colors(52, style)
-        
     # Prepare fit result data
     resulting_curves = {region : dict() for region in regions}      
 
@@ -210,7 +247,7 @@ def get_supply_curves(scenario: str,
 
                 for tech in df1.columns:
                     
-                    # Skip if very low max production
+                    # Skip if very low fuel consumption
                     if df1.loc[:, tech].max() < 1e-5:
                         continue
                     
@@ -261,6 +298,9 @@ def get_supply_curves(scenario: str,
             
     return resulting_curves
 
+### ------------------------------- ###
+###            2. Main              ###
+### ------------------------------- ###
 if __name__ == "__main__":
     
     # Example usage for one scenario
