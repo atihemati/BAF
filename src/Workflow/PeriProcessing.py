@@ -854,7 +854,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, style:
 
     curves = {}
     antares_input = AntaresInput('Antares')
-    commodities = ['HEAT', 'HYDROGEN']
+    commodities = ['HYDROGEN', 'HEAT']
     
     fuel_consumption = result.get_result('F_CONS_YCRAST')
     el_prices = result.get_result('EL_PRICE_YCRST')

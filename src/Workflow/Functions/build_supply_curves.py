@@ -14,30 +14,59 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
 from pybalmorel import Balmorel, MainResults
-from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 
 ### ------------------------------- ###
 ###           1. Functions          ###
 ### ------------------------------- ###
 
-def get_inverse_residual_load(result: MainResults, scenario: str, year: int, commodity: str):
+def get_inverse_residual_load(result: MainResults, scenario: str, year: int):
+    """Calculate inverse residual load for the supply curve fitting functions
+
+    Args:
+        result (MainResults): The MainResults class
+        scenario (str): The scenario
+        year (int): The model year
+
+    Returns:
+        pd.DataFrame: Parameters in the format expected by get_supply_curves
+    """
     
     # Load data
     
     ## Get all indices from electricity price, which is guaranteed to have a value for all indices
     all_index = result.get_result('EL_PRICE_YCRST').pivot_table(index=['Region', 'Season', 'Time'], values='Value').index
+    year = str(year)
     
-    ## Actual Data
-    production = result.get_result('PRO_YCRAGFST').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
-    curtailment = result.get_result('CURT_YCRAGFST').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=all_index, fill_value=0)
-    el_demand = result.get_result('EL_DEMAND_YCRST').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    ## Actual Results
+    production = result.get_result('PRO_YCRAGFST').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    curtailment = result.get_result('CURT_YCRAGFST').query('Scenario == @scenario and Y == @year').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=all_index, fill_value=0)
+    el_demand = result.get_result('EL_DEMAND_YCRST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
     
-    inverse_residual_load = production + curtailment - el_demand
+    ## Calculate inverse residual load
+    inverse_residual_load = (production + curtailment - el_demand - heat_demand)
     
     return inverse_residual_load.reset_index()
 
-def get_heat_demand(result: MainResults):
-    pass
+def get_heat_demand(result: MainResults, scenario: str, year: int):
+    """Calculate inverse residual load for the supply curve fitting functions
+
+    Args:
+        result (MainResults): The MainResults class
+        scenario (str): The scenario
+        year (int): The model year
+
+    Returns:
+        pd.DataFrame: Parameters in the format expected by get_supply_curves
+    """
+    
+    
+    all_index = result.get_result('EL_PRICE_YCRST').pivot_table(index=['Region', 'Season', 'Time'], values='Value').index
+    year = str(year)
+    
+    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    
+    return heat_demand
 
 def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str):
     """Get parameters for supply curve fitting depending on the commodity
@@ -53,9 +82,9 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     """
     
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(result, scenario, year, commodity)
+        return get_heat_demand(result, scenario, year)
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year, commodity)
+        return get_inverse_residual_load(result, scenario, year)
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
@@ -210,6 +239,7 @@ def get_supply_curves(scenario: str,
                       parameters: pd.DataFrame,
                       fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
+                      precision: int = -4,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
                       style: str = 'report'):
@@ -222,6 +252,7 @@ def get_supply_curves(scenario: str,
         parameters (pd.DataFrame): The dataframe containing the parameter values for all regions, seasons and time steps with columns ['Region', 'Season', 'Time']
         fuel_consumption (pd.DataFrame): Fuel consumption results. 
         el_prices (pd.DataFrame): Electricity prices.
+        precision (int): The precision to fit parameter values to (NOTE: This is problematic when you start having smaller countries in the scope! Should be made dependent on the absolute magnitude of profiles)
         plot_overall_curves (bool, optional): Plot regional heat and hydrogen supply curves?
         plot_all_curves (bool, optional): Plot stepfunction fit of ALL technologies and regional heat and hydrogen supply curves?
         style (str, optional): Style of supply curve plot. Defaults to 'report'.
@@ -239,6 +270,7 @@ def get_supply_curves(scenario: str,
     # Prepare parameters to iterate through and colors for plotting them
     regions = df1_temp.Region.unique()
     parameter_name = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])][0]
+    parameters = parameters.round({parameter_name : precision}) # NOTE: This will be a problem when you have smaller countries in the model
 
     # Prepare fit result data
     resulting_curves = {region : dict() for region in regions}      
@@ -290,10 +322,12 @@ def get_supply_curves(scenario: str,
                     
             if len(supply_curves_x) != 0:
                 combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
+            else:
+                combined_x, combined_y = [0, 0], [0, 0]
                 
-                # Plot overall curve    
-                if plot_all_curves or plot_overall_curves:
-                    ax_parameter.plot(combined_x, combined_y, label=parameter_value)
+            # Plot overall curve    
+            if plot_all_curves or plot_overall_curves:
+                ax_parameter.plot(combined_x, combined_y, label=parameter_value)
 
             # Store seasonal curves   
             resulting_curves[region][parameter_value] = {'price' : np.round(combined_x),
@@ -338,5 +372,5 @@ if __name__ == "__main__":
     
     ## Make curves
     for commodity in commodities:  
-        resulting_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, plot_overall_curves=True)
+        resulting_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, -1, plot_overall_curves=True)
     
