@@ -882,17 +882,17 @@ def create_demand_response(result: MainResults, scenario: str, year: int, style:
             load = np.zeros(8760)
             highest_price = 0
             
-            seasons = curves[commodity][region].keys()        
-            for season in seasons:
+            parameters = curves[commodity][region].keys()        
+            for parameter in parameters:
                 
-                temp = pd.DataFrame({'price' : curves[commodity][region][season]['price'],
-                                    'capacity' : curves[commodity][region][season]['capacity']},
-                                   index=np.arange(len(curves[commodity][region][season]['price'])))
+                temp = pd.DataFrame({'price' : curves[commodity][region][parameter]['price'],
+                                    'capacity' : curves[commodity][region][parameter]['capacity']},
+                                   index=np.arange(len(curves[commodity][region][parameter]['price'])))
                 
                 # Store max price if higher than overall highest price for region
-                max_seasonal_price = round(temp['price'].max())
-                if max_seasonal_price >= highest_price:
-                    highest_price = max_seasonal_price + 1
+                max_price_for_parameter = round(temp['price'].max())
+                if max_price_for_parameter >= highest_price:
+                    highest_price = max_price_for_parameter + 1
 
                 # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
                 diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
@@ -913,13 +913,13 @@ def create_demand_response(result: MainResults, scenario: str, year: int, style:
                     config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                             True, max_cap, price)
 
-                    # Set availability
-                    week_nr = int(season.lstrip('S'))
-                    availability[cluster_name][(week_nr-1)*168:week_nr*168] = diff.loc[price, 'capacity']
+                # NOTE: I will need to create an index here instead. Preferably per weather year, but i could start with single weather year
+                #     # Set availability 
+                #     week_nr = int(parameter.lstrip('S'))
+                #     availability[cluster_name][(week_nr-1)*168:week_nr*168] = diff.loc[price, 'capacity']
 
-                    
-                # Set load
-                load[(week_nr-1)*168:week_nr*168] = diff.loc[:, 'capacity'].sum()
+                # # Set load
+                # load[(week_nr-1)*168:week_nr*168] = diff.loc[:, 'capacity'].sum()
 
             # Save load and availability
             with open(antares_input.path_load[virtual_area], 'w') as f:
@@ -1053,36 +1053,36 @@ def peri_process(sc_name: str, year: str):
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
     res = MainResults(files='MainResults_%s.gdx'%SC, paths='Balmorel/%s/model/'%SC_folder, system_directory=gams_system_directory)
 
-    # Renewable Capacities
-    fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
-                                             GDATA, ANNUITYCG,
-                                             fAntTechno, i, year)
+    # # Renewable Capacities
+    # fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
+    #                                          GDATA, ANNUITYCG,
+    #                                          fAntTechno, i, year)
             
-    # Thermal Capacities
-    fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
-                                            BalmTechs, GDATA, FPRICE, 
-                                            FDATA, EMI_POL, ANNUITYCG, 
-                                            cap, i, year, fAntTechno)
+    # # Thermal Capacities
+    # fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
+    #                                         BalmTechs, GDATA, FPRICE, 
+    #                                         FDATA, EMI_POL, ANNUITYCG, 
+    #                                         cap, i, year, fAntTechno)
 
-    # Storage Capacities
-    fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
-                                            cap, GDATA, ANNUITYCG,
-                                            fAntTechno, i, year)            
+    # # Storage Capacities
+    # fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
+    #                                         cap, GDATA, ANNUITYCG,
+    #                                         fAntTechno, i, year)            
 
-    # Transmission Capacities
-    antares_transmission_capacities(res.db[SC], A2B_regi,
-                                    A2B_regi_h2, year)    
+    # # Transmission Capacities
+    # antares_transmission_capacities(res.db[SC], A2B_regi,
+    #                                 A2B_regi_h2, year)    
 
-    # Exogenous Electricity Demand Profile
-    antares_exogenous_electricity_demand(electricity_profiles, 
-                                         electricity_demand, DISLOSSEL, 
-                                         A2B_regi, year)
+    # # Exogenous Electricity Demand Profile
+    # antares_exogenous_electricity_demand(electricity_profiles, 
+    #                                      electricity_demand, DISLOSSEL, 
+    #                                      A2B_regi, year)
 
-    # Resource Constraints
-    antares_weekly_resource_constraints(A2B_regi, B2A_ren,
-                                        BalmTechs, year, 
-                                        GDATA, GMAXF, GMAXFS,
-                                        CCCRRR, cap)
+    # # Resource Constraints
+    # antares_weekly_resource_constraints(A2B_regi, B2A_ren,
+    #                                     BalmTechs, year, 
+    #                                     GDATA, GMAXF, GMAXFS,
+    #                                     CCCRRR, cap)
     
     # Demand response 
     create_demand_response(res, SC, year, style)
