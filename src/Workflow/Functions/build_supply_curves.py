@@ -66,7 +66,7 @@ def get_heat_demand(result: MainResults, scenario: str, year: int):
     
     heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
     
-    return heat_demand
+    return heat_demand.reset_index()
 
 def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str):
     """Get parameters for supply curve fitting depending on the commodity
