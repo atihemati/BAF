@@ -13,30 +13,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
-import click
 from pybalmorel import Balmorel, MainResults
 
 ### ------------------------------- ###
 ###           1. Functions          ###
 ### ------------------------------- ###
 
-@click.pass_context
-def convert_balmorel_time_to_hours(ctx, result: MainResults):
-    
-    ctx.ensure_object(dict)
-    
-    if not('balmorel_index' in ctx.obj.keys()):
-        ctx.obj['balmorel_index'] = result.get_result('EL_PRICE_YCRST').pivot_table(index=['Season', 'Time'], values='Value').index
-    
-        S = ctx.obj['balmorel_index'].get_level_values(0).str.lstrip('S').astype(int)
-        T = ctx.obj['balmorel_index'].get_level_values(1).str.lstrip('T').astype(int)
-    
-        # Convert S T to hours in a year. E.g.: S02 T002 = 1*168 + 2
-    
-    print()
 
-@click.pass_context
-def get_inverse_residual_load(ctx, result: MainResults, scenario: str, year: int):
+def get_inverse_residual_load(result: MainResults, scenario: str, year: int):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -65,8 +49,7 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str, year: int
     
     return inverse_residual_load.reset_index()
 
-@click.pass_context
-def get_heat_demand(ctx, result: MainResults, scenario: str, year: int):
+def get_heat_demand(result: MainResults, scenario: str, year: int):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:

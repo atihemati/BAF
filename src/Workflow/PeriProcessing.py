@@ -28,7 +28,7 @@ import click
 import os
 import pickle
 import configparser
-from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput
+from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, convert_balmorel_time_to_hours
 from Workflow.Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit
 from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel, MainResults
@@ -842,7 +842,7 @@ def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  ye
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(result: MainResults, scenario: str, year: int, style: str = 'report'):
+def create_demand_response(result: MainResults, scenario: str, year: int, temporal_resolution: pd.MultiIndex, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -1046,6 +1046,10 @@ def peri_process(sc_name: str, year: str):
     GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
     GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
     CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
+    S = symbol_to_df(ALLENDOFMODEL, 'S')
+    T = symbol_to_df(ALLENDOFMODEL, 'T')
+    ST = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)))
+    temporal_resolution = convert_balmorel_time_to_hours(ST)
     del ALLENDOFMODEL, ws # Release some memory
 
 
@@ -1085,7 +1089,7 @@ def peri_process(sc_name: str, year: str):
     #                                     CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(res, SC, year, style)
+    create_demand_response(res, SC, year, ST, style)
     create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   

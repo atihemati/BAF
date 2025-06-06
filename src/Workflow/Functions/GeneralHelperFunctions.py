@@ -53,6 +53,17 @@ def log_process_time(file_path, iteration, process_name, delta_time):
         with open(file_path, 'w') as file:
             file.write('Iteration,Process,Time\n')
             file.write('%d,%s,%d\n'%(iteration, process_name, delta_time))
+            
+def convert_balmorel_time_to_hours(temporal_resolution: pd.MultiIndex):
+    
+        
+    S = temporal_resolution.get_level_values(0).str.lstrip('S').astype(int)
+    T = temporal_resolution.get_level_values(1).str.lstrip('T').astype(int)
+
+    # Convert S T to hours in a year. E.g.: S02 T002 = 1*168 + 2    
+    print(S)
+    print(T)
+
 
 #%% ------------------------------- ###
 ###           2. Dataframes         ###
