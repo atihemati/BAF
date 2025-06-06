@@ -37,16 +37,16 @@ except ModuleNotFoundError:
     balmmap = pd.DataFrame({'id' : 'a'},index=[0])
 
 @click.group()
-@click.option('--weather-year', type=int, required=False, default=2000, help="The weather year for Balmorel timeseries input")
 @click.pass_context
-def CLI(ctx, weather_year: int):
+def CLI(ctx):
     """The command line interface for pre-processing stuff"""
 
     ### 0.0 Load configuration file
     Config = configparser.ConfigParser()
     Config.read('Config.ini')
     UseAntaresData = Config.getboolean('PeriProcessing', 'UseAntaresData') 
-        
+    balmorel_weather_year = Config.getint('PreProcessing', 'balmorel_weather_year')
+    
     style = 'report'
 
     if style == 'report':
@@ -98,7 +98,7 @@ def CLI(ctx, weather_year: int):
 
     ## Set weather years
     if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
-        ctx.obj['weather_years'] = [weather_year]
+        ctx.obj['weather_years'] = [balmorel_weather_year]
     elif command == 'generate-antares-vre':
         ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
                                     1987, 1988, 1989, 1990, 1991, 
