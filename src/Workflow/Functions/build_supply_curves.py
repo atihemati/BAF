@@ -36,7 +36,7 @@ def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
     
 @click.pass_context
 def get_inverse_residual_load(ctx, result: MainResults, scenario: str, 
-                              year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                              model_year: int, weather_year: int, hour_index: list, balmorel_index: pd.MultiIndex,
                               to_create_antares_input: bool = False):
     """Calculate inverse residual load for the supply curve fitting functions
 
@@ -50,15 +50,14 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
     """
     
     # Get data
-    year = str(year)
-    balmorel_weather_year = ctx.obj['balmorel_weather_year']
+    model_year = str(model_year)
 
     # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
     all_data = {}
     for data in ['onshore_wind', 'offshore_wind', 'solar_pv', 'load', 'heat']:
         
         if data != 'load':
-            all_data[data] = ctx.obj[data][balmorel_weather_year]
+            all_data[data] = ctx.obj[data][weather_year]
         else:
             all_data[data] = ctx.obj[data][0]
         
@@ -67,17 +66,17 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
             all_data[data].index = balmorel_index
         
     # Calculate VRE profiles
-    capacities = result.get_result('G_CAP_YCRAF').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV"]').pivot_table(columns=['Region'], index='Technology', values='Value', aggfunc='sum', fill_value=0)
+    capacities = result.get_result('G_CAP_YCRAF').query('Scenario == @scenario and Year == @model_year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV"]').pivot_table(columns=['Region'], index='Technology', values='Value', aggfunc='sum', fill_value=0)
     regions = capacities.columns
     all_data['onshore_wind'] = all_data['onshore_wind'][regions] * capacities.loc['WIND-ON'] * 1e3
     all_data['offshore_wind'] = all_data['offshore_wind'][regions] * capacities.loc["WIND-OFF"] * 1e3
     all_data['solar_pv'] = all_data['solar_pv'][regions] * capacities.loc["SOLAR-PV"] * 1e3
     
     # Calculate exogenous demand profiles
-    el_demand = result.get_result('EL_DEMAND_YCR').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
+    el_demand = result.get_result('EL_DEMAND_YCR').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
     all_data['load'] = all_data['load'][regions] / all_data['load'][regions].sum() *  el_demand.values * 1e6
     
-    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
+    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
     all_data['heat'] = all_data['heat'][regions] / all_data['heat'][regions].sum() *  heat_demand.values * 1e6
     
         
@@ -91,7 +90,7 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
 
 @click.pass_context
 def get_heat_demand(ctx, result: MainResults, scenario: str, 
-                    year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                    model_year: int, weather_year: int, hour_index: list, balmorel_index: pd.MultiIndex,
                     to_create_antares_input: bool = False):
     """Calculate inverse residual load for the supply curve fitting functions
 
@@ -106,16 +105,15 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
     """
     
     # Get data
-    year = str(year)
-    balmorel_weather_year = ctx.obj['balmorel_weather_year']
-    heat_profile = ctx.obj['heat'][balmorel_weather_year]
+    model_year = str(model_year)
+    heat_profile = ctx.obj['heat'][weather_year]
 
     if not(to_create_antares_input):
         # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
         heat_profile = heat_profile.loc[np.array(hour_index) + 1]
         heat_profile.index = balmorel_index
         
-    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
+    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
     
     # Calculate exogenous demand profiles
     heat_profile = heat_profile[heat_demand.columns] / heat_profile[heat_demand.columns].sum() *  heat_demand.values * 1e6
@@ -123,7 +121,8 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
 
     return heat_profile
 
-def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
+@click.pass_context
+def get_parameters_for_supply_curve_fit(ctx, result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
     """Get parameters for supply curve fitting depending on the commodity
 
     Args:
@@ -136,10 +135,12 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
         parameters (pd.DataFrame): The parameters to fit with columns [parameter_name, 'Region', 'Season', 'Time'] 
     """
     
+    balmorel_weather_year = ctx.obj['balmorel_weather_year']
+    
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(result, scenario, year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        return get_heat_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        return get_inverse_residual_load(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
