@@ -21,36 +21,6 @@ from .GeneralHelperFunctions import get_balmorel_time_and_hours, load_OSMOSE_dat
 ###           1. Functions          ###
 ### ------------------------------- ###
 
-
-def get_inverse_residual_load(result: MainResults, scenario: str, year: int, hour_index: list):
-    """Calculate inverse residual load for the supply curve fitting functions
-
-    Args:
-        result (MainResults): The MainResults class
-        scenario (str): The scenario
-        year (int): The model year
-
-    Returns:
-        pd.DataFrame: Parameters in the format expected by get_supply_curves
-    """
-    
-    # Load data
-    
-    ## Get all indices from electricity price, which is guaranteed to have a value for all indices
-    balmorel_index, all_index = get_balmorel_time_and_hours(result)
-    year = str(year)
-    
-    ## Actual Results
-    production = result.get_result('PRO_YCRAGFST').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
-    curtailment = result.get_result('CURT_YCRAGFST').query('Scenario == @scenario and Y == @year').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=balmorel_index, fill_value=0)
-    el_demand = result.get_result('EL_DEMAND_YCRST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
-    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
-    
-    ## Calculate inverse residual load
-    inverse_residual_load = (production + curtailment - el_demand - heat_demand)
-    
-    return inverse_residual_load.reset_index()
-
 @click.pass_context
 @load_OSMOSE_data(files=['heat', 'offshore_wind', 'onshore_wind', 'solar_pv', 'load'])
 def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
@@ -64,6 +34,60 @@ def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
 
     ctx.obj[data] = stoch_year_data
     
+@click.pass_context
+def get_inverse_residual_load(ctx, result: MainResults, scenario: str, 
+                              year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                              to_create_antares_input: bool = False):
+    """Calculate inverse residual load for the supply curve fitting functions
+
+    Args:
+        result (MainResults): The MainResults class
+        scenario (str): The scenario
+        year (int): The model year
+
+    Returns:
+        pd.DataFrame: Parameters in the format expected by get_supply_curves
+    """
+    
+    # Get data
+    year = str(year)
+    balmorel_weather_year = ctx.obj['balmorel_weather_year']
+
+    # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
+    all_data = {}
+    for data in ['onshore_wind', 'offshore_wind', 'solar_pv', 'load', 'heat']:
+        
+        if data != 'load':
+            all_data[data] = ctx.obj[data][balmorel_weather_year]
+        else:
+            all_data[data] = ctx.obj[data][0]
+        
+        if not(to_create_antares_input):
+            all_data[data] = all_data[data].loc[np.array(hour_index) + 1]
+            all_data[data].index = balmorel_index
+        
+    # Calculate VRE profiles
+    capacities = result.get_result('G_CAP_YCRAF').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV"]').pivot_table(columns=['Region'], index='Technology', values='Value', aggfunc='sum', fill_value=0)
+    regions = capacities.columns
+    all_data['onshore_wind'] = all_data['onshore_wind'][regions] * capacities.loc['WIND-ON'] * 1e3
+    all_data['offshore_wind'] = all_data['offshore_wind'][regions] * capacities.loc["WIND-OFF"] * 1e3
+    all_data['solar_pv'] = all_data['solar_pv'][regions] * capacities.loc["SOLAR-PV"] * 1e3
+    
+    # Calculate exogenous demand profiles
+    el_demand = result.get_result('EL_DEMAND_YCR').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
+    all_data['load'] = all_data['load'][regions] / all_data['load'][regions].sum() *  el_demand.values * 1e6
+    
+    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
+    all_data['heat'] = all_data['heat'][regions] / all_data['heat'][regions].sum() *  heat_demand.values * 1e6
+    
+        
+    ## Calculate inverse residual load
+    inverse_residual_load = all_data['onshore_wind'] + all_data['offshore_wind'] + all_data['solar_pv'] - all_data['load'] - all_data['heat']
+    
+    inverse_residual_load = inverse_residual_load.stack().reset_index().rename(columns={'country' : 'Region', 0 : 'Value'})
+    
+    return inverse_residual_load
+
 
 @click.pass_context
 def get_heat_demand(ctx, result: MainResults, scenario: str, 
@@ -115,7 +139,7 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     if commodity.upper() == 'HEAT':
         return get_heat_demand(result, scenario, year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year, temporal_resolution['hour_index'])
+        return get_inverse_residual_load(result, scenario, year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
