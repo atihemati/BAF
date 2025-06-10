@@ -13,8 +13,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
+import click
 from pybalmorel import Balmorel, MainResults
-from .GeneralHelperFunctions import get_balmorel_time_and_hours
+from .GeneralHelperFunctions import get_balmorel_time_and_hours, load_OSMOSE_data
 
 ### ------------------------------- ###
 ###           1. Functions          ###
@@ -50,7 +51,9 @@ def get_inverse_residual_load(result: MainResults, scenario: str, year: int, hou
     
     return inverse_residual_load.reset_index()
 
-def get_heat_demand(result: MainResults, scenario: str, year: int, hour_index: list):
+@click.pass_context
+@load_OSMOSE_data(files=['heat'])
+def get_heat_demand(ctx, data, stoch_year_data, hour_index: list):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -63,11 +66,11 @@ def get_heat_demand(result: MainResults, scenario: str, year: int, hour_index: l
         pd.DataFrame: Parameters in the format expected by get_supply_curves
     """
     
-    year = str(year)
+    balmorel_weather_year = ctx.obj['balmorel_weather_year']
+    print(stoch_year_data.keys(), '\n', stoch_year_data[balmorel_weather_year].loc[np.array(hour_index) + 1])
+    # heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
     
-    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
-    
-    return heat_demand.reset_index()
+    # return heat_demand.reset_index()
 
 def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str, hour_index: list):
     """Get parameters for supply curve fitting depending on the commodity
@@ -83,7 +86,7 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     """
     
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(result, scenario, year, hour_index)
+        return get_heat_demand(hour_index)
     elif commodity.upper() == 'HYDROGEN':
         return get_inverse_residual_load(result, scenario, year, hour_index)
     else:

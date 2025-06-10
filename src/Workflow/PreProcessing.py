@@ -16,7 +16,7 @@ import os
 import sys
 sys.path.append('.')
 from Functions.Formatting import newplot, nested_dict_to_df
-from Functions.GeneralHelperFunctions import load_OSMOSE_data
+from Functions.GeneralHelperFunctions import load_OSMOSE_data, data_context
 from pybalmorel import IncFile
 import pickle
 from scipy.spatial import distance_matrix
@@ -79,22 +79,7 @@ def CLI(ctx):
         
     ## Set paths for data
     if command in ['generate-antares-vre', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
-        # Create data filepaths
-        ctx.obj['data_filepaths'] = {
-            'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
-            'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
-            'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
-            'heat'          : 'Pre-Processing/Data/heating_coeff/heating_coeff_%d.csv',
-            'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv',
-        }
-        
-        ctx.obj['data_value_column'] = {
-            'offshore_wind' : 'offshore_wind',
-            'onshore_wind' : 'onshore_wind',
-            'solar_pv' : 'pv',
-            'heat'    : 'heating_coeff',
-            'load' : 'non_thermosensitive',
-        }
+        ctx = data_context(ctx)
 
     ## Set weather years
     if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
