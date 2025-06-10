@@ -25,7 +25,8 @@ import gams
 import pickle
 import configparser
 import sys
-from Workflow.Functions.GeneralHelperFunctions import symbol_to_df, AntaresOutput
+from pybalmorel.utils import symbol_to_df
+from Workflow.Functions.GeneralHelperFunctions import AntaresOutput
 if not('SC' in locals()):
     try:
         # Try to read something from the command line

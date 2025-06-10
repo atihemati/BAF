@@ -21,7 +21,8 @@ import os
 if ('Workflow' in __file__) | ('Pre-Processing' in __file__):
     os.chdir(os.path.dirname(os.path.dirname(__file__)))        
 import pickle
-from Workflow.Functions.GeneralHelperFunctions import symbol_to_df, IncFile, AntaresOutput
+from pybalmorel.utils import symbol_to_df
+from Workflow.Functions.GeneralHelperFunctions import IncFile, AntaresOutput
 from Workflow.Functions.Methods import (
     calculate_link_capacity_credits, calculate_generator_capacity_credits, 
     calculate_h2generator_capacity_credits, recalculate_resmar,

@@ -14,7 +14,8 @@ import os
 import configparser
 import gams
 import pickle
-from Workflow.Functions.GeneralHelperFunctions import AntaresOutput, symbol_to_df
+from pybalmorel.utils import symbol_to_df
+from Workflow.Functions.GeneralHelperFunctions import AntaresOutput
 
 style = 'report'
 

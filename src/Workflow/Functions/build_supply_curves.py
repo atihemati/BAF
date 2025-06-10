@@ -14,13 +14,14 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
 from pybalmorel import Balmorel, MainResults
+from .GeneralHelperFunctions import get_balmorel_time_and_hours
 
 ### ------------------------------- ###
 ###           1. Functions          ###
 ### ------------------------------- ###
 
 
-def get_inverse_residual_load(result: MainResults, scenario: str, year: int):
+def get_inverse_residual_load(result: MainResults, scenario: str, year: int, hour_index: list):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -35,21 +36,21 @@ def get_inverse_residual_load(result: MainResults, scenario: str, year: int):
     # Load data
     
     ## Get all indices from electricity price, which is guaranteed to have a value for all indices
-    indices = convert_balmorel_time_to_hours(result)
+    balmorel_index, all_index = get_balmorel_time_and_hours(result)
     year = str(year)
     
     ## Actual Results
-    production = result.get_result('PRO_YCRAGFST').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
-    curtailment = result.get_result('CURT_YCRAGFST').query('Scenario == @scenario and Y == @year').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=all_index, fill_value=0)
-    el_demand = result.get_result('EL_DEMAND_YCRST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
-    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    production = result.get_result('PRO_YCRAGFST').query('Scenario == @scenario and Year == @year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV", "HYDRO-RESERVOIRS", "HYDRO-RUN-OF-RIVER"]').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
+    curtailment = result.get_result('CURT_YCRAGFST').query('Scenario == @scenario and Y == @year').pivot_table(index=['RRR', 'SSS', 'TTT'], values=['Value'], aggfunc='sum').rename(index={'RRR' : 'Region', 'SSS' : 'Season', 'TTT' : 'Time'}).reindex(index=balmorel_index, fill_value=0)
+    el_demand = result.get_result('EL_DEMAND_YCRST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
+    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
     
     ## Calculate inverse residual load
     inverse_residual_load = (production + curtailment - el_demand - heat_demand)
     
     return inverse_residual_load.reset_index()
 
-def get_heat_demand(result: MainResults, scenario: str, year: int):
+def get_heat_demand(result: MainResults, scenario: str, year: int, hour_index: list):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -61,14 +62,14 @@ def get_heat_demand(result: MainResults, scenario: str, year: int):
         pd.DataFrame: Parameters in the format expected by get_supply_curves
     """
     
-    hour_index = convert_balmorel_time_to_hours(result)
+    balmorel_index, hour_index = get_balmorel_time_and_hours(result)
     year = str(year)
     
-    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=all_index, fill_value=0)
+    heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
     
     return heat_demand.reset_index()
 
-def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str):
+def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str, hour_index: list):
     """Get parameters for supply curve fitting depending on the commodity
 
     Args:
@@ -82,9 +83,9 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     """
     
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(result, scenario, year)
+        return get_heat_demand(result, scenario, year, hour_index)
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year)
+        return get_inverse_residual_load(result, scenario, year, hour_index)
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 

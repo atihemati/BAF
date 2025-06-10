@@ -16,9 +16,10 @@ import pickle
 import configparser
 import plotly.express as px
 import plotly.graph_objects as go
+from pybalmorel.utils import symbol_to_df
 from pybalmorel.formatting import balmorel_colours
 from Functions.Formatting import newplot, set_style, stacked_bar
-from Functions.GeneralHelperFunctions import symbol_to_df, filter_low_max, AntaresOutput
+from Functions.GeneralHelperFunctions import filter_low_max, AntaresOutput
 from Functions.antaresViz import stacked_plot
 import warnings
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)

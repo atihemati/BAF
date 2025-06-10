@@ -18,6 +18,8 @@ from typing import Union
 import time
 import sys
 import configparser
+from pybalmorel.utils import symbol_to_df 
+import gams
 
 #%% ------------------------------- ###
 ###          1. Logging etc.        ###
@@ -54,39 +56,32 @@ def log_process_time(file_path, iteration, process_name, delta_time):
             file.write('Iteration,Process,Time\n')
             file.write('%d,%s,%d\n'%(iteration, process_name, delta_time))
             
-def convert_balmorel_time_to_hours(temporal_resolution: pd.MultiIndex):
-    
-        
-    S = temporal_resolution.get_level_values(0).str.lstrip('S').astype(int)
-    T = temporal_resolution.get_level_values(1).str.lstrip('T').astype(int)
+def get_balmorel_time_and_hours(ALLENDOFMODEL: gams.GamsDatabase):
+    """Get the temporal resolution using all_endofmodel.gdx
 
-    # Convert S T to hours in a year. E.g.: S02 T002 = 1*168 + 2    
-    print(S)
-    print(T)
+    Args:
+        ALLENDOFMODEL (gams.GamsDatabase): _description_
+
+    Returns:
+        pd.MultiIndex, list: pandas index of Balmorel timeslices, list of corresponding hours in a year 
+    """
+    
+    # Get balmorel_index
+    S = symbol_to_df(ALLENDOFMODEL, 'S')
+    T = symbol_to_df(ALLENDOFMODEL, 'T')
+    balmorel_index = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)))
+    
+    # Convert to hours in a year    
+    weeks = S['SSS'].str.lstrip('S').astype(int)
+    hours = T['TTT'].str.lstrip('T').astype(int)
+    hour_index = [(week-1)*168 + hour - 1 for week in weeks for hour in hours]
+    
+    return balmorel_index, hour_index
 
 
 #%% ------------------------------- ###
 ###           2. Dataframes         ###
 ### ------------------------------- ###
-
-### 1.1 GDX to DataFrames
-def symbol_to_df(db, symbol, cols='None'):
-    """
-    Loads a symbol from a GDX database into a pandas dataframe
-
-    Args:
-        db (GamsDatabase): The loaded gdx file
-        symbol (string): The wanted symbol in the gdx file
-        cols (list): The columns
-    """   
-    df = dict( (tuple(rec.keys), rec.value) for rec in db[symbol] )
-    df = pd.DataFrame(df, index=['Value']).T.reset_index() # Convert to dataframe
-    if cols != 'None':
-        try:
-            df.columns = cols
-        except:
-            pass
-    return df 
 
 ### 1.2 Create a filter for either all values or only the highest and lowest value in a column
 def filter_low_max(df, col='none', plot_all=True):
@@ -750,12 +745,14 @@ def check_antares_compilation(wait_sec: int, max_waits: int, N_errors: int):
 
 if __name__ == '__main__':
     
-    print('Test of loading binding constraint:')
-    cf = BC()
+    # print('Test of loading binding constraint:')
+    # cf = BC()
     
-    print(
-        'Load fr_psp type and operator:',
-        cf.get('fr_psp', 'type'),
-        cf.get('fr_psp', 'operator')
-    )
+    # print(
+    #     'Load fr_psp type and operator:',
+    #     cf.get('fr_psp', 'type'),
+    #     cf.get('fr_psp', 'operator')
+    # )
+    
+    get_balmorel_time_and_hours()
     

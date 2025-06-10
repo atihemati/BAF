@@ -32,8 +32,8 @@ if 'Timeseries Aggregation' in __file__:
     os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 elif ('Workflow' in __file__) | ('Pre-Processing' in __file__):
     os.chdir(os.path.dirname(os.path.dirname(__file__)))
-
-from Workflow.Functions.GeneralHelperFunctions import symbol_to_df, doLDC, IncFile, ReadIncFilePrefix
+from pybalmorel.utils import symbol_to_df
+from Workflow.Functions.GeneralHelperFunctions import doLDC, IncFile, ReadIncFilePrefix
 try:
     import tsam.timeseriesaggregation as tsam
 except ModuleNotFoundError:

@@ -28,9 +28,9 @@ import click
 import os
 import pickle
 import configparser
-from Workflow.Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, convert_balmorel_time_to_hours
-from Workflow.Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit
-from Workflow.Functions.physicality_of_antares_solution import BalmorelFullTimeseries
+from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours
+from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit
+from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
 
@@ -842,7 +842,7 @@ def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  ye
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(result: MainResults, scenario: str, year: int, temporal_resolution: pd.MultiIndex, style: str = 'report'):
+def create_demand_response(result: MainResults, scenario: str, year: int, hour_index: list, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -1046,10 +1046,7 @@ def peri_process(sc_name: str, year: str):
     GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
     GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
     CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
-    S = symbol_to_df(ALLENDOFMODEL, 'S')
-    T = symbol_to_df(ALLENDOFMODEL, 'T')
-    ST = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)))
-    temporal_resolution = convert_balmorel_time_to_hours(ST)
+    balmorel_index, hour_index = get_balmorel_time_and_hours(ALLENDOFMODEL)
     del ALLENDOFMODEL, ws # Release some memory
 
 
@@ -1057,39 +1054,39 @@ def peri_process(sc_name: str, year: str):
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
     res = MainResults(files='MainResults_%s.gdx'%SC, paths='Balmorel/%s/model/'%SC_folder, system_directory=gams_system_directory)
 
-    # # Renewable Capacities
-    # fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
-    #                                          GDATA, ANNUITYCG,
-    #                                          fAntTechno, i, year)
+    # Renewable Capacities
+    fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
+                                             GDATA, ANNUITYCG,
+                                             fAntTechno, i, year)
             
-    # # Thermal Capacities
-    # fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
-    #                                         BalmTechs, GDATA, FPRICE, 
-    #                                         FDATA, EMI_POL, ANNUITYCG, 
-    #                                         cap, i, year, fAntTechno)
+    # Thermal Capacities
+    fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
+                                            BalmTechs, GDATA, FPRICE, 
+                                            FDATA, EMI_POL, ANNUITYCG, 
+                                            cap, i, year, fAntTechno)
 
-    # # Storage Capacities
-    # fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
-    #                                         cap, GDATA, ANNUITYCG,
-    #                                         fAntTechno, i, year)            
+    # Storage Capacities
+    fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
+                                            cap, GDATA, ANNUITYCG,
+                                            fAntTechno, i, year)            
 
-    # # Transmission Capacities
-    # antares_transmission_capacities(res.db[SC], A2B_regi,
-    #                                 A2B_regi_h2, year)    
+    # Transmission Capacities
+    antares_transmission_capacities(res.db[SC], A2B_regi,
+                                    A2B_regi_h2, year)    
 
-    # # Exogenous Electricity Demand Profile
-    # antares_exogenous_electricity_demand(electricity_profiles, 
-    #                                      electricity_demand, DISLOSSEL, 
-    #                                      A2B_regi, year)
+    # Exogenous Electricity Demand Profile
+    antares_exogenous_electricity_demand(electricity_profiles, 
+                                         electricity_demand, DISLOSSEL, 
+                                         A2B_regi, year)
 
-    # # Resource Constraints
-    # antares_weekly_resource_constraints(A2B_regi, B2A_ren,
-    #                                     BalmTechs, year, 
-    #                                     GDATA, GMAXF, GMAXFS,
-    #                                     CCCRRR, cap)
+    # Resource Constraints
+    antares_weekly_resource_constraints(A2B_regi, B2A_ren,
+                                        BalmTechs, year, 
+                                        GDATA, GMAXF, GMAXFS,
+                                        CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(res, SC, year, ST, style)
+    create_demand_response(res, SC, year, hour_index, style)
     create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
