@@ -67,7 +67,8 @@ def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
 
 @click.pass_context
 def get_heat_demand(ctx, result: MainResults, scenario: str, 
-                    year: int, hour_index: list, balmorel_index: pd.MultiIndex):
+                    year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                    to_create_antares_input: bool = False):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -83,8 +84,13 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
     # Get data
     year = str(year)
     balmorel_weather_year = ctx.obj['balmorel_weather_year']
-    heat_profile = ctx.obj['heat'][balmorel_weather_year].loc[np.array(hour_index) + 1]
-    heat_profile.index = balmorel_index
+    heat_profile = ctx.obj['heat'][balmorel_weather_year]
+
+    if not(to_create_antares_input):
+        # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
+        heat_profile = heat_profile.loc[np.array(hour_index) + 1]
+        heat_profile.index = balmorel_index
+        
     heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
     
     # Calculate exogenous demand profiles
