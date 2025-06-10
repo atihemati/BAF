@@ -864,7 +864,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, hour_i
     
     for commodity in commodities:
         
-        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity)
+        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, hour_index)
         curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         

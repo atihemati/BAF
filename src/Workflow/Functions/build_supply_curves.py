@@ -57,12 +57,12 @@ def get_heat_demand(result: MainResults, scenario: str, year: int, hour_index: l
         result (MainResults): The MainResults class
         scenario (str): The scenario
         year (int): The model year
+        hour_index (list): The chosen hours in a year chosen as Balmorel resolution
 
     Returns:
         pd.DataFrame: Parameters in the format expected by get_supply_curves
     """
     
-    balmorel_index, hour_index = get_balmorel_time_and_hours(result)
     year = str(year)
     
     heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)

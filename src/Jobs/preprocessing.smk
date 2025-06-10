@@ -6,7 +6,7 @@ config.read('Config.ini')
 geographical_scope = config.get('PreProcessing', 'geographical_scope') 
 
 # Command templates (include space in the end for extra arguments)
-preprocessing_cli_cmd = "python Pre-Processing/PreProcessing.py "
+preprocessing_cli_cmd = "python Workflow/PreProcessing.py "
 
 # Representative final outputs for preprocessing 
 rule all:

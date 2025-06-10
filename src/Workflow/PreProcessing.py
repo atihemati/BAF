@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 import os
 import sys
 sys.path.append('.')
-from Workflow.Functions.Formatting import newplot, nested_dict_to_df
+from Functions.Formatting import newplot, nested_dict_to_df
+from Functions.GeneralHelperFunctions import load_OSMOSE_data
 from pybalmorel import IncFile
-from functools import wraps
 import pickle
 from scipy.spatial import distance_matrix
 import configparser
@@ -170,37 +170,6 @@ def create_incfiles(names: list,
             incfiles[incfile].body = bodies[incfile]
             
     return incfiles
-
-
-def load_OSMOSE_data(files: list):
-    """Load data from OSMOSE and do something with func(*args, **kwargs)"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(ctx, *args, **kwargs):
-            data_filepaths = ctx.obj['data_filepaths']
-            value_names = ctx.obj['data_value_column']
-            weather_years = ctx.obj['weather_years']
-            
-            for data in files:
-                
-                # Load input data
-                stoch_year_data = {}
-                if data != 'load':
-                    for year in weather_years:
-                        filename = data_filepaths[data]%year
-                        print('Reading %s'%filename)
-                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
-                                                                                columns='country', 
-                                                                                values=value_names[data])
-                else:
-                    stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
-                                                                            columns='country', 
-                                                                            values=value_names[data])
-                
-                func(ctx, data, stoch_year_data, *args, **kwargs)
-        
-        return wrapper
-    return decorator
 
 def append_neighbouring_years(filename: str, year: int, values: str,
                               index: str = 'timestamp', columns: str = 'country'):

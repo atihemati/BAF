@@ -12,13 +12,14 @@ Created on 18/08/2023 by
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Union
+from functools import wraps
+from pybalmorel.utils import symbol_to_df 
 import shutil
 import os
-from typing import Union
 import time
 import sys
 import configparser
-from pybalmorel.utils import symbol_to_df 
 import gams
 
 #%% ------------------------------- ###
@@ -743,16 +744,45 @@ def check_antares_compilation(wait_sec: int, max_waits: int, N_errors: int):
     return compile_finished, N_errors
     
 
+def load_OSMOSE_data(files: list):
+    """Load data from OSMOSE and do something with func(*args, **kwargs)"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(ctx, *args, **kwargs):
+            data_filepaths = ctx.obj['data_filepaths']
+            value_names = ctx.obj['data_value_column']
+            weather_years = ctx.obj['weather_years']
+            
+            for data in files:
+                
+                # Load input data
+                stoch_year_data = {}
+                if data != 'load':
+                    for year in weather_years:
+                        filename = data_filepaths[data]%year
+                        print('Reading %s'%filename)
+                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                                columns='country', 
+                                                                                values=value_names[data])
+                else:
+                    stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
+                                                                            columns='country', 
+                                                                            values=value_names[data])
+                
+                func(ctx, data, stoch_year_data, *args, **kwargs)
+        
+        return wrapper
+    return decorator
+
 if __name__ == '__main__':
     
-    # print('Test of loading binding constraint:')
-    # cf = BC()
+    print('Test of loading binding constraint:')
+    cf = BC()
     
-    # print(
-    #     'Load fr_psp type and operator:',
-    #     cf.get('fr_psp', 'type'),
-    #     cf.get('fr_psp', 'operator')
-    # )
+    print(
+        'Load fr_psp type and operator:',
+        cf.get('fr_psp', 'type'),
+        cf.get('fr_psp', 'operator')
+    )
     
-    get_balmorel_time_and_hours()
     
