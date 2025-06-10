@@ -70,7 +70,7 @@ def get_balmorel_time_and_hours(ALLENDOFMODEL: gams.GamsDatabase):
     # Get balmorel_index
     S = symbol_to_df(ALLENDOFMODEL, 'S')
     T = symbol_to_df(ALLENDOFMODEL, 'T')
-    balmorel_index = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)))
+    balmorel_index = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)), names=('Season', 'Time'))
     
     # Convert to hours in a year    
     weeks = S['SSS'].str.lstrip('S').astype(int)
@@ -743,7 +743,7 @@ def check_antares_compilation(wait_sec: int, max_waits: int, N_errors: int):
         
     return compile_finished, N_errors
     
-
+@click.pass_context
 def data_context(ctx):
     # Create data filepaths
     ctx.obj['data_filepaths'] = {

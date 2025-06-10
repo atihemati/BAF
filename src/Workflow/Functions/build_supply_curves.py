@@ -52,8 +52,22 @@ def get_inverse_residual_load(result: MainResults, scenario: str, year: int, hou
     return inverse_residual_load.reset_index()
 
 @click.pass_context
-@load_OSMOSE_data(files=['heat'])
-def get_heat_demand(ctx, data, stoch_year_data, hour_index: list):
+@load_OSMOSE_data(files=['heat', 'offshore_wind', 'onshore_wind', 'solar_pv', 'load'])
+def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
+    """Load OSMOSE data to context
+
+    Args:
+        ctx (_type_): _description_
+        data (_type_): _description_
+        stoch_year_data (_type_): _description_
+    """
+
+    ctx.obj[data] = stoch_year_data
+    
+
+@click.pass_context
+def get_heat_demand(ctx, result: MainResults, scenario: str, 
+                    year: int, hour_index: list, balmorel_index: pd.MultiIndex):
     """Calculate inverse residual load for the supply curve fitting functions
 
     Args:
@@ -66,13 +80,20 @@ def get_heat_demand(ctx, data, stoch_year_data, hour_index: list):
         pd.DataFrame: Parameters in the format expected by get_supply_curves
     """
     
+    # Get data
+    year = str(year)
     balmorel_weather_year = ctx.obj['balmorel_weather_year']
-    print(stoch_year_data.keys(), '\n', stoch_year_data[balmorel_weather_year].loc[np.array(hour_index) + 1])
-    # heat_demand = result.get_result('H_DEMAND_YCRAST').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(index=['Region', 'Season', 'Time'], values=['Value'], aggfunc='sum').reindex(index=balmorel_index, fill_value=0)
+    heat_profile = ctx.obj['heat'][balmorel_weather_year].loc[np.array(hour_index) + 1]
+    heat_profile.index = balmorel_index
+    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
     
-    # return heat_demand.reset_index()
+    # Calculate exogenous demand profiles
+    heat_profile = heat_profile[heat_demand.columns] / heat_profile[heat_demand.columns].sum() *  heat_demand.values * 1e6
+    heat_profile = heat_profile.stack().reset_index().rename(columns={'country' : 'Region', 0 : 'Value'})
 
-def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str, hour_index: list):
+    return heat_profile
+
+def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
     """Get parameters for supply curve fitting depending on the commodity
 
     Args:
@@ -86,9 +107,9 @@ def get_parameters_for_supply_curve_fit(result: MainResults, scenario: str, year
     """
     
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(hour_index)
+        return get_heat_demand(result, scenario, year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year, hour_index)
+        return get_inverse_residual_load(result, scenario, year, temporal_resolution['hour_index'])
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 

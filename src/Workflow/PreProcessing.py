@@ -79,7 +79,7 @@ def CLI(ctx):
         
     ## Set paths for data
     if command in ['generate-antares-vre', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
-        ctx = data_context(ctx)
+        data_context()
 
     ## Set weather years
     if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:

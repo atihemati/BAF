@@ -29,7 +29,7 @@ import os
 import pickle
 import configparser
 from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
-from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit
+from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit, load_OSMOSE_data_to_context
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
@@ -842,7 +842,7 @@ def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  ye
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(result: MainResults, scenario: str, year: int, hour_index: list, style: str = 'report'):
+def create_demand_response(result: MainResults, scenario: str, year: int, temporal_resolution: dict, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -864,7 +864,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, hour_i
     
     for commodity in commodities:
         
-        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, hour_index)
+        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, temporal_resolution)
         curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         
@@ -1011,7 +1011,8 @@ def main(ctx, sc_name: str, year: str):
                                 2002, 2003, 2004, 2005, 2006, 
                                 2007, 2008, 2009, 2010, 2011, 
                                 2012, 2013, 2014, 2015, 2016]
-    ctx = data_context(ctx)
+    data_context()
+    load_OSMOSE_data_to_context()
 
     # Dictionaries for Balmorel/Antares set translation
 
@@ -1057,6 +1058,8 @@ def main(ctx, sc_name: str, year: str):
     GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
     CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
     balmorel_index, hour_index = get_balmorel_time_and_hours(ALLENDOFMODEL)
+    temporal_resolution = {'balmorel_index' : balmorel_index,
+                           'hour_index' : hour_index}
     del ALLENDOFMODEL, ws # Release some memory
 
 
@@ -1096,7 +1099,7 @@ def main(ctx, sc_name: str, year: str):
     #                                     CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(res, SC, year, hour_index, style)
+    create_demand_response(res, SC, year, temporal_resolution, style)
     create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
