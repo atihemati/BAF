@@ -29,7 +29,7 @@ import os
 import pickle
 import configparser
 from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
-from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit, load_OSMOSE_data_to_context
+from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit, load_OSMOSE_data_to_context, model_supply_curves_in_antares
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
@@ -864,89 +864,15 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
     
     for commodity in commodities:
         
+        # Compute supply curves from Balmorel results
         parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, temporal_resolution)
         curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = curves[commodity].keys()
         
         for region in regions:
-            
-            # Delete all thermal clusters in virtual region
-            virtual_area = f'{region}_{commodity}'.lower()
-            try:
-                antares_input.purge_thermal_clusters(virtual_area)
-            except FileNotFoundError:
-                pass
-            
-            # Placeholder for availability, electricity to commodity load and unserved energy cost (highest marginal price + 1 €/MWh)
-            availability = {}
-            load = np.zeros(8760)
-            highest_price = 0
-            
-            parameters = curves[commodity][region].keys()        
-            for parameter in parameters:
-                
-                temp = pd.DataFrame({'price' : curves[commodity][region][parameter]['price'],
-                                    'capacity' : curves[commodity][region][parameter]['capacity']},
-                                   index=np.arange(len(curves[commodity][region][parameter]['price'])))
-                
-                # Store max price if higher than overall highest price for region
-                max_price_for_parameter = round(temp['price'].max())
-                if max_price_for_parameter >= highest_price:
-                    highest_price = max_price_for_parameter + 1
-
-                # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
-                diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
-                
-                # Create a cluster per price 
-                for price in [price for price in diff.index if price != 0]:
-                    
-                    # Get max capacity and initiate availability timeseries if it doesn't exist yet
-                    cluster_name = f'{price:.0f}_europermwh'
-                    if not(cluster_name in availability.keys()):
-                        availability[cluster_name] = np.zeros(8760)
-                        max_cap = diff.loc[price, 'capacity']
-                    elif availability[cluster_name].max() > diff.loc[price, 'capacity']:
-                        max_cap = availability[cluster_name].max()
-                    else:
-                        max_cap = diff.loc[price, 'capacity']
-                    
-                    config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
-                                                                                            True, max_cap, price)
-
-                # NOTE: I will need to create an index here instead. Preferably per weather year, but i could start with single weather year
-                #     # Set availability 
-                #     week_nr = int(parameter.lstrip('S'))
-                #     availability[cluster_name][(week_nr-1)*168:week_nr*168] = diff.loc[price, 'capacity']
-
-                # # Set load
-                # load[(week_nr-1)*168:week_nr*168] = diff.loc[:, 'capacity'].sum()
-
-            # Save load and availability
-            with open(antares_input.path_load[virtual_area], 'w') as f:
-                f.write("\n".join(list(load.astype(str))))
-                
-            create_transmission_input('./', 'Antares', region, virtual_area, [load.max(), 0], 0.1)
-            
-            for cluster in availability.keys():
-                with open(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 'w') as f:
-                    f.write("\n".join(list(availability[cluster].astype(str))))
-            
-            # Set unserved energy cost for virtual region
-            unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))
-
-            # Set unserved energy cost for related region higher if it is below the virtual cost
-            real_region_unc = unserved_energy_cost.getfloat('unserverdenergycost', region.lower())
-            if real_region_unc <= highest_price:
-                unserved_energy_cost.set('unserverdenergycost', region.lower(), str(highest_price + 10))
-                
-            # Set hydrogen related power production cost between the two, so fuel cells don't supply heat or hydrogen
-            conf = antares_input.thermal(region)
-            fuelcell_cost = conf.getfloat('fuelcell_hydrogen', 'marginal-cost')
-            if fuelcell_cost <= highest_price:
-                conf.set('fuelcell_hydrogen', 'marginal-cost', str(highest_price + 5))
-                conf.set('fuelcell_hydrogen', 'market-bid-cost', str(highest_price + 5))
-                with open('Antares/input/thermal/clusters/%s/list.ini'%region.lower(), 'w') as f:
-                    conf.write(f)
+        
+            # Apply supply curves to the Antares model
+            unserved_energy_cost = model_supply_curves_in_antares(antares_input, curves, commodity, region, unserved_energy_cost)
     
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
@@ -1067,36 +993,36 @@ def main(ctx, sc_name: str, year: str):
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
     res = MainResults(files='MainResults_%s.gdx'%SC, paths='Balmorel/%s/model/'%SC_folder, system_directory=gams_system_directory)
 
-    # # Renewable Capacities
-    # fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
-    #                                          GDATA, ANNUITYCG,
-    #                                          fAntTechno, i, year)
+    # Renewable Capacities
+    fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
+                                             GDATA, ANNUITYCG,
+                                             fAntTechno, i, year)
             
-    # # Thermal Capacities
-    # fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
-    #                                         BalmTechs, GDATA, FPRICE, 
-    #                                         FDATA, EMI_POL, ANNUITYCG, 
-    #                                         cap, i, year, fAntTechno)
+    # Thermal Capacities
+    fAntTechno = antares_thermal_capacities(res.db[SC], A2B_regi, A2B_regi_h2, 
+                                            BalmTechs, GDATA, FPRICE, 
+                                            FDATA, EMI_POL, ANNUITYCG, 
+                                            cap, i, year, fAntTechno)
 
-    # # Storage Capacities
-    # fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
-    #                                         cap, GDATA, ANNUITYCG,
-    #                                         fAntTechno, i, year)            
+    # Storage Capacities
+    fAntTechno = antares_storage_capacities(res.db[SC], A2B_regi, 
+                                            cap, GDATA, ANNUITYCG,
+                                            fAntTechno, i, year)            
 
-    # # Transmission Capacities
-    # antares_transmission_capacities(res.db[SC], A2B_regi,
-    #                                 A2B_regi_h2, year)    
+    # Transmission Capacities
+    antares_transmission_capacities(res.db[SC], A2B_regi,
+                                    A2B_regi_h2, year)    
 
-    # # Exogenous Electricity Demand Profile
-    # antares_exogenous_electricity_demand(electricity_profiles, 
-    #                                      electricity_demand, DISLOSSEL, 
-    #                                      A2B_regi, year)
+    # Exogenous Electricity Demand Profile
+    antares_exogenous_electricity_demand(electricity_profiles, 
+                                         electricity_demand, DISLOSSEL, 
+                                         A2B_regi, year)
 
-    # # Resource Constraints
-    # antares_weekly_resource_constraints(A2B_regi, B2A_ren,
-    #                                     BalmTechs, year, 
-    #                                     GDATA, GMAXF, GMAXFS,
-    #                                     CCCRRR, cap)
+    # Resource Constraints
+    antares_weekly_resource_constraints(A2B_regi, B2A_ren,
+                                        BalmTechs, year, 
+                                        GDATA, GMAXF, GMAXFS,
+                                        CCCRRR, cap)
     
     # Demand response 
     create_demand_response(res, SC, year, temporal_resolution, style)
