@@ -491,6 +491,7 @@ def model_supply_curves_in_antares(antares_input: AntaresInput,
         with open('Antares/input/thermal/clusters/%s/list.ini'%region.lower(), 'w') as f:
             conf.write(f)
 
+    return unserved_energy_cost
 
 ### ------------------------------- ###
 ###            2. Main              ###
