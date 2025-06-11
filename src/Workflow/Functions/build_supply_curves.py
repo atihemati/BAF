@@ -407,7 +407,7 @@ def get_supply_curves(scenario: str,
 
 
 def model_supply_curves_in_antares(antares_input: AntaresInput, 
-                                   curves: dict,
+                                   supply_curves: dict,
                                    commodity: str,
                                    region: str,
                                    unserved_energy_cost: configparser.ConfigParser):
@@ -424,12 +424,12 @@ def model_supply_curves_in_antares(antares_input: AntaresInput,
     load = np.zeros(8760)
     highest_price = 0
     
-    parameters = curves[commodity][region].keys()        
+    parameters = supply_curves[commodity][region].keys()        
     for parameter in parameters:
         
-        temp = pd.DataFrame({'price' : curves[commodity][region][parameter]['price'],
-                            'capacity' : curves[commodity][region][parameter]['capacity']},
-                            index=np.arange(len(curves[commodity][region][parameter]['price'])))
+        temp = pd.DataFrame({'price' : supply_curves[commodity][region][parameter]['price'],
+                            'capacity' : supply_curves[commodity][region][parameter]['capacity']},
+                            index=np.arange(len(supply_curves[commodity][region][parameter]['price'])))
         
         # Store max price if higher than overall highest price for region
         max_price_for_parameter = round(temp['price'].max())

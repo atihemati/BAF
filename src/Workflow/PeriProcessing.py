@@ -852,7 +852,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
 
-    curves = {}
+    supply_curves = {}
     antares_input = AntaresInput('Antares')
     commodities = ['HEAT', 'HYDROGEN']
     
@@ -866,13 +866,13 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
         
         # Compute supply curves from Balmorel results
         parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, temporal_resolution)
-        curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
-        regions = curves[commodity].keys()
+        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
+        regions = supply_curves[commodity].keys()
         
         for region in regions:
         
             # Apply supply curves to the Antares model
-            unserved_energy_cost = model_supply_curves_in_antares(antares_input, curves, commodity, region, unserved_energy_cost)
+            unserved_energy_cost = model_supply_curves_in_antares(antares_input, supply_curves, commodity, region, unserved_energy_cost)
     
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
