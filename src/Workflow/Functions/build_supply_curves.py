@@ -66,8 +66,11 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
         else:
             all_data[data] = ctx.obj[data][0]
         
+        all_data[data].index = np.array(all_data[data].index) - 1 # make index start from zero
+        all_data[data].index.name = 'time_id'
+        
         if not(to_create_antares_input):
-            all_data[data] = all_data[data].loc[np.array(hour_index) + 1]
+            all_data[data] = all_data[data].loc[hour_index]
             all_data[data].index = balmorel_index
         
     # Calculate VRE profiles
@@ -110,10 +113,12 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
     # Get data
     model_year = str(model_year)
     heat_profile = ctx.obj['heat'][weather_year]
+    heat_profile.index = np.array(heat_profile.index) - 1 # make index start from zero
+    heat_profile.index.name = 'time_id'
 
     if not(to_create_antares_input):
         # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
-        heat_profile = heat_profile.loc[np.array(hour_index) + 1]
+        heat_profile = heat_profile.loc[hour_index]
         heat_profile.index = balmorel_index
         
     heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
@@ -185,7 +190,6 @@ def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, yea
         # Concatenate
         temp['Weather Year'] = weather_year
         parameters = pd.concat((parameters, temp))
-        print(parameters)
         
     return parameters
 
@@ -446,12 +450,73 @@ def get_supply_curves(scenario: str,
             
     return resulting_curves
 
+def find_closest_indices_with_cut(column, Y):
+    """Find the indices in a column, that are closest to each value in the list Y
+    @author: claude.ai
 
-def model_supply_curves_in_antares(antares_input: AntaresInput, 
+    Args:
+        column (pd.Series): A column in a dataframe, i.e. a series class
+        Y (list): A list of values
+
+    Returns:
+        result: A dictionary with indices for column, for each element in Y
+    """
+    # Sort parameter values
+    Y.sort()
+    
+    # Create bins as midpoints between consecutive Y values
+    # Add -inf and +inf as boundaries
+    if len(Y) == 1:
+        bins = [-np.inf, np.inf]
+        labels = [0]
+    else:
+        # Create bins at midpoints between Y values
+        midpoints = (Y[:-1] + Y[1:]) / 2
+        bins = [-np.inf] + midpoints.tolist() + [np.inf]
+        labels = list(range(len(Y)))
+    
+    # Use pd.cut to assign each value to closest Y index
+    closest_indices = pd.cut(column, bins=bins, labels=labels, include_lowest=True)
+    
+    # Group original indices by their closest Y value
+    result = {}
+    for y_idx in range(len(Y)):
+        mask = closest_indices == y_idx
+        indices = column.index[mask].tolist()
+        if indices:  # Only include if there are indices
+            result[Y[y_idx]] = indices
+        else:
+            result[Y[y_idx]] = []
+    
+    return result
+
+def map_closest_parameters(all_parameters: pd.DataFrame,
+                           fitted_parameters: list, 
+                           region: str):
+    
+    weather_year_array = all_parameters.query('Region == @region').pivot_table(index='time_id', columns='Weather Year', values='Value')
+    
+    weather_years = weather_year_array.columns
+    indices = {weather_year : {} for weather_year in weather_years}
+    for weather_year in weather_years:
+        indices[weather_year] = find_closest_indices_with_cut(weather_year_array[weather_year], np.array(list(fitted_parameters)))
+    
+    return indices
+
+@click.pass_context
+def model_supply_curves_in_antares(ctx, 
+                                   all_parameters: pd.DataFrame, 
                                    supply_curves: dict,
+                                   antares_input: AntaresInput,
                                    commodity: str,
                                    region: str,
                                    unserved_energy_cost: configparser.ConfigParser):
+    
+    # Placeholder for availability, electricity to commodity load, unserved energy cost (highest marginal price + 1 €/MWh) and the parameter for all years
+    availability = {}
+    weather_years = ctx.obj['weather_years']
+    load = np.zeros((8760, len(weather_years)))
+    highest_price = 0
     
     # Delete all thermal clusters in virtual region
     virtual_area = f'{region}_{commodity}'.lower()
@@ -460,17 +525,16 @@ def model_supply_curves_in_antares(antares_input: AntaresInput,
     except FileNotFoundError:
         pass
     
-    # Placeholder for availability, electricity to commodity load and unserved energy cost (highest marginal price + 1 €/MWh)
-    availability = {}
-    load = np.zeros(8760)
-    highest_price = 0
+    # Map the parameters not captured by Balmorel timeslices to the closest fitted parameter
+    fitted_parameters = supply_curves[region].keys()       
+    idx_mapped = map_closest_parameters(all_parameters, fitted_parameters, region)
     
-    parameters = supply_curves[commodity][region].keys()        
-    for parameter in parameters:
+    for parameter in fitted_parameters:
         
-        temp = pd.DataFrame({'price' : supply_curves[commodity][region][parameter]['price'],
-                            'capacity' : supply_curves[commodity][region][parameter]['capacity']},
-                            index=np.arange(len(supply_curves[commodity][region][parameter]['price'])))
+        # Get the supply curve for the specific parameter
+        temp = pd.DataFrame({'price' : supply_curves[region][parameter]['price'],
+                            'capacity' : supply_curves[region][parameter]['capacity']},
+                            index=np.arange(len(supply_curves[region][parameter]['price'])))
         
         # Store max price if higher than overall highest price for region
         max_price_for_parameter = round(temp['price'].max())
@@ -486,7 +550,7 @@ def model_supply_curves_in_antares(antares_input: AntaresInput,
             # Get max capacity and initiate availability timeseries if it doesn't exist yet
             cluster_name = f'{price:.0f}_europermwh'
             if not(cluster_name in availability.keys()):
-                availability[cluster_name] = np.zeros(8760, 31)
+                availability[cluster_name] = np.zeros((8760, len(weather_years)))
                 max_cap = diff.loc[price, 'capacity']
             elif availability[cluster_name].max() > diff.loc[price, 'capacity']:
                 max_cap = availability[cluster_name].max()
@@ -495,26 +559,24 @@ def model_supply_curves_in_antares(antares_input: AntaresInput,
             
             config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                     True, max_cap, price)
+            
+            # Set availability of virtual cluster
+            for i, weather_year in enumerate(weather_years):
+                availability[cluster_name][idx_mapped[weather_year][parameter], i] = diff.loc[price, 'capacity']
 
-        # NOTE: I will need to create an index here instead. Preferably per weather year, but i could start with single weather year
-        #     # Set availability 
-        #     week_nr = int(parameter.lstrip('S'))
-        #     availability[cluster_name][(week_nr-1)*168:week_nr*168] = diff.loc[price, 'capacity']
-
-        # # Set load
-        # load[(week_nr-1)*168:week_nr*168] = diff.loc[:, 'capacity'].sum()
+        # Set load
+        for i, weather_year in enumerate(weather_years):
+            load[idx_mapped[weather_year][parameter], i] = diff.loc[:, 'capacity'].sum()
 
     # Save load and availability
-    with open(antares_input.path_load[virtual_area], 'w') as f:
-        f.write("\n".join(list(load.astype(str))))
+    np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')
         
     create_transmission_input('./', 'Antares', region, virtual_area, [load.max(), 0], 0.1)
     
     for cluster in availability.keys():
-        with open(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 'w') as f:
-            f.write("\n".join(list(availability[cluster].astype(str))))
+        np.savetxt(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 
+                   availability[cluster], delimiter='\t', fmt='%g')
     
-
     # Set unserved energy cost for virtual region
     unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))
 

@@ -873,7 +873,7 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
         for region in regions:
         
             # Apply supply curves to the Antares model
-            unserved_energy_cost = model_supply_curves_in_antares(antares_input, supply_curves, commodity, region, unserved_energy_cost)
+            unserved_energy_cost = model_supply_curves_in_antares(all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
     
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
