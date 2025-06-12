@@ -765,7 +765,7 @@ def data_context(ctx):
         
     return ctx
 
-def load_OSMOSE_data(files: list):
+def load_OSMOSE_data(files: list, print_files_read: bool = False):
     """Load data from OSMOSE and do something with func(*args, **kwargs)"""
     def decorator(func):
         @wraps(func)
@@ -781,7 +781,8 @@ def load_OSMOSE_data(files: list):
                 if data != 'load':
                     for year in weather_years:
                         filename = data_filepaths[data]%year
-                        print('Reading %s'%filename)
+                        if print_files_read:
+                            print('Reading %s'%filename)
                         stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
                                                                                 columns='country', 
                                                                                 values=value_names[data])
