@@ -386,6 +386,8 @@ def get_supply_curves(scenario: str,
         region_parameters = parameters.query('Region == @region')
         unique_parameters = region_parameters[parameter_name].unique()
         
+        print(f'Fitting supply curves for {commodity} in {region}...')
+        
         for parameter in unique_parameters:
             
             supply_curves_x, supply_curves_y = [], []
