@@ -29,7 +29,7 @@ import os
 import pickle
 import configparser
 from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
-from Functions.build_supply_curves import get_supply_curves, get_parameters_for_supply_curve_fit, load_OSMOSE_data_to_context, model_supply_curves_in_antares
+from Functions.build_supply_curves import get_supply_curves, get_supply_curve_parameters_fit, get_supply_curve_parameters_all, load_OSMOSE_data_to_context, model_supply_curves_in_antares
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
@@ -865,8 +865,9 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
     for commodity in commodities:
         
         # Compute supply curves from Balmorel results
-        parameters = get_parameters_for_supply_curve_fit(result, scenario, year, commodity, temporal_resolution)
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
+        all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity, temporal_resolution) # all, for later
+        fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
+        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
         for region in regions:

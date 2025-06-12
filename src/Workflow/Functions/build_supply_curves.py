@@ -125,11 +125,16 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
     return heat_profile
 
 @click.pass_context
-def get_parameters_for_supply_curve_fit(ctx, result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
+def get_supply_curve_parameters_fit(ctx, result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
     """Get parameters for supply curve fitting depending on the commodity
 
     Args:
+        ctx (_type_): click CLI context
+        result (MainResults): The result file
+        scenario (str): The scenario name
+        year (int): The model year
         commodity (str): Either 'HEAT' or 'HYDROGEN'
+        temporal_resolution (dict): Temporal resolution of Balmorel
     
     Raises:
         ValueError: If choice is not 'HEAT' or 'HYDROGEN'
@@ -147,6 +152,42 @@ def get_parameters_for_supply_curve_fit(ctx, result: MainResults, scenario: str,
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
+@click.pass_context
+def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
+    """Get parameters for supply curve fitting depending on the commodity
+        
+    Args:
+        ctx (_type_): click CLI context
+        result (MainResults): The result file
+        scenario (str): The scenario name
+        year (int): The model year
+        commodity (str): Either 'HEAT' or 'HYDROGEN'
+        temporal_resolution (dict): Temporal resolution of Balmorel
+
+    Raises:
+        ValueError: If choice is not 'HEAT' or 'HYDROGEN'
+
+    Returns:
+        parameters (pd.DataFrame): All parameters, for all weather years ['time_id', 'Region', parameter_name, 'Weather Year'] 
+    """
+    
+    weather_years = ctx.obj['weather_years']
+    parameters = pd.DataFrame({})
+    
+    for weather_year in weather_years:
+        if commodity.upper() == 'HEAT':
+            temp = get_heat_demand(result, scenario, year, weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'], to_create_antares_input=True)
+        elif commodity.upper() == 'HYDROGEN':
+            temp = get_inverse_residual_load(result, scenario, year, weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'], to_create_antares_input=True)
+        else:
+            raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
+
+        # Concatenate
+        temp['Weather Year'] = weather_year
+        parameters = pd.concat((parameters, temp))
+        print(parameters)
+        
+    return parameters
 
 def get_supply_curve(x: np.array, y: np.array):
     """A function to construct a supply curve depending on x and y data
