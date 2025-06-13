@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import pandas as pd
 import click
+import pickle
 import os
 import configparser
 from pybalmorel import Balmorel, MainResults
@@ -343,7 +344,7 @@ def get_supply_curves(scenario: str,
                       parameters: pd.DataFrame,
                       fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
-                      precision: int = -4,
+                      precision: int = 0,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
                       style: str = 'report'):
@@ -370,6 +371,10 @@ def get_supply_curves(scenario: str,
     technology = commodity2technology[commodity]
     df1_temp = fuel_consumption.query('Year == @year and Technology == @technology')
     df2_temp = el_prices.query('Year == @year')
+    
+    # Convert EPS to 0
+    idx = df2_temp.query('Value < 1e-6').index
+    df2_temp.loc[idx, 'Value'] = 0 
     
     # Prepare parameters to iterate through and colors for plotting them
     regions = df1_temp.Region.unique()
@@ -483,12 +488,15 @@ def find_closest_indices_with_cut(column, Y):
     # Group original indices by their closest Y value
     result = {}
     for y_idx in range(len(Y)):
+        # print(f'Looking for parameters closest to {Y[y_idx]}, which is nr. {y_idx} of the parameters')
         mask = closest_indices == y_idx
         indices = column.index[mask].tolist()
         if indices:  # Only include if there are indices
+            # print(indices)
             result[Y[y_idx]] = indices
         else:
             result[Y[y_idx]] = []
+            # print(f'No indices found for param "{Y[y_idx]}"')
     
     return result
 
@@ -497,7 +505,7 @@ def map_closest_parameters(all_parameters: pd.DataFrame,
                            region: str):
     
     weather_year_array = all_parameters.query('Region == @region').pivot_table(index='time_id', columns='Weather Year', values='Value')
-    
+
     weather_years = weather_year_array.columns
     indices = {weather_year : {} for weather_year in weather_years}
     for weather_year in weather_years:
@@ -505,8 +513,7 @@ def map_closest_parameters(all_parameters: pd.DataFrame,
     
     return indices
 
-@click.pass_context
-def model_supply_curves_in_antares(ctx, 
+def model_supply_curves_in_antares(weather_years: list, 
                                    all_parameters: pd.DataFrame, 
                                    supply_curves: dict,
                                    antares_input: AntaresInput,
@@ -516,7 +523,6 @@ def model_supply_curves_in_antares(ctx,
     
     # Placeholder for availability, electricity to commodity load, unserved energy cost (highest marginal price + 1 €/MWh) and the parameter for all years
     availability = {}
-    weather_years = ctx.obj['weather_years']
     load = np.zeros((8760, len(weather_years)))
     highest_price = 0
     
@@ -528,7 +534,8 @@ def model_supply_curves_in_antares(ctx,
         pass
     
     # Map the parameters not captured by Balmorel timeslices to the closest fitted parameter
-    fitted_parameters = supply_curves[region].keys()       
+    fitted_parameters = supply_curves[region].keys()  
+    print(f'Fitting {commodity} for region {region}')  
     idx_mapped = map_closest_parameters(all_parameters, fitted_parameters, region)
     
     for parameter in fitted_parameters:
@@ -546,8 +553,15 @@ def model_supply_curves_in_antares(ctx,
         # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
         diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
         
+        # Get rounded prices
+        prices = np.unique([round(price) for price in diff.index])
+        
+        # if len(prices) > 0:
+        #     print(prices)
+        
         # Create a cluster per price 
-        for price in [price for price in diff.index if price != 0]:
+        for price in prices:
+            # print(price)
             
             # Get max capacity and initiate availability timeseries if it doesn't exist yet
             cluster_name = f'{price:.0f}_europermwh'
@@ -561,10 +575,15 @@ def model_supply_curves_in_antares(ctx,
             
             config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                     True, max_cap, price)
-            
+        
             # Set availability of virtual cluster
             for i, weather_year in enumerate(weather_years):
+                # print(i, weather_year)
+                # print('='*6, 'The indices: \n', idx_mapped[weather_year][parameter])
+                # print('='*6, 'Availabilities before: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
                 availability[cluster_name][idx_mapped[weather_year][parameter], i] = diff.loc[price, 'capacity']
+                # print('='*6, 'Availabilities after: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
+                # print('='*6, 'Capacity should be equal to that: \n', diff.loc[price, 'capacity'])
 
         # Set load
         for i, weather_year in enumerate(weather_years):
@@ -601,28 +620,60 @@ def model_supply_curves_in_antares(ctx,
 ### ------------------------------- ###
 ###            2. Main              ###
 ### ------------------------------- ###
-if __name__ == "__main__":
+
+@click.command()
+@click.argument('testfunction', type=str, required=True)
+def CLI(testfunction):
     
-    # Example usage for one scenario
-    scenario = 'baf_test_Iter0'
+    scenario = 'baf_test_new_Iter0'
     year = 2050
     commodities = ['HEAT', 'HYDROGEN']
-    resulting_curves = {}
     
-    ## Get Balmorel Results
-    gams_system_directory = 'C:/GAMS/47'
-    m=Balmorel('Balmorel')
-    m.locate_results()
-    res = MainResults('MainResults_' + scenario + '.gdx',
-                      paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model', 
-                      system_directory=gams_system_directory)
-    production = res.get_result('F_CONS_YCRAST')
-    el_prices= res.get_result('EL_PRICE_YCRST')
+    if testfunction == 'fitting_supply_curves':    
+        # Example usage for one scenario
+        resulting_curves = {}
+        
+        ## Get Balmorel Results
+        gams_system_directory = '/opt/gams/48.5'
+        m=Balmorel('Balmorel')
+        m.locate_results()
+        res = MainResults('MainResults_' + scenario + '.gdx',
+                        paths='Balmorel/' + m.scname_to_scfolder[scenario] + '/model', 
+                        system_directory=gams_system_directory)
+        production = res.get_result('F_CONS_YCRAST')
+        el_prices= res.get_result('EL_PRICE_YCRST')
+        idx = el_prices.query('Value < 1e-6').index
+        el_prices.loc[idx, 'Value'] = 0 
+        
+        ## Prepare parameters to fit
+        parameters = el_prices.round({'Value' : 0}).pivot_table(index=['Region', 'Season', 'Time'], values='Value').reset_index().rename(columns={'Value' : 'Elprice'})
+        
+        ## Make curves
+        for commodity in commodities:  
+            resulting_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, -1, plot_overall_curves=True)
     
-    ## Prepare parameters to fit
-    parameters = el_prices.round({'Value' : 0}).pivot_table(index=['Region', 'Season', 'Time'], values='Value').reset_index().rename(columns={'Value' : 'Elprice'})
-    
-    ## Make curves
-    for commodity in commodities:  
-        resulting_curves[commodity] = get_supply_curves(scenario, year, commodity, parameters, production, el_prices, -1, plot_overall_curves=True)
-    
+    elif testfunction == 'model_supply_curves': 
+
+        test_data = {}        
+        for parameter in ['all_parameters', 'supply_curves']:
+            with open(f'../tests/{parameter}_for_model.pkl', 'rb') as f:
+                test_data[parameter] = pickle.load(f)
+            
+        antares_input = AntaresInput()
+        region = 'DE'
+        unserved_energy_cost = configparser.ConfigParser()
+        unserved_energy_cost.read('Antares/input/thermal/areas.ini')
+        weather_years = [1982, 1983, 1984, 1985, 1986, 
+                        1987, 1988, 1989, 1990, 1991, 
+                        1992, 1993, 1994, 1995, 1996, 
+                        1997, 1998, 1999, 2000, 2001, 
+                        2002, 2003, 2004, 2005, 2006, 
+                        2007, 2008, 2009, 2010, 2011, 
+                        2012, 2013, 2014, 2015, 2016]
+        # weather_years = [2000]
+        commodity = 'HEAT'
+        
+        unserved_energy_cost = model_supply_curves_in_antares(weather_years, test_data['all_parameters'], test_data['supply_curves'][commodity], antares_input, commodity, region, unserved_energy_cost)
+
+if __name__ == "__main__":
+    CLI()

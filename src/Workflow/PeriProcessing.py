@@ -144,8 +144,6 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
     
     ## Overall
     ant_input = AntaresInput('Antares')
-    eco = symbol_to_df(db, 'ECO_G_YCRAG', ['Y', 'C', 'R', 'A', 'G', 'F', 
-                                        'Tech', 'Var', 'Subvar', 'Unit', 'Value'])
 
     ## Hourly hydrogen price 
     h2_price_hourly = symbol_to_df(db, 'H2_PRICE_YCRST')
@@ -193,22 +191,15 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                     # Index for capacities
                     idx_cap = (cap['Commodity'] == 'ELECTRICITY') & (cap.R == balmorel_region) & (cap.F == fuel) & (cap.Tech == tech.replace('-CCS', '')) & (cap.Y == year)    
                     
-                    # Index for marginal costs
-                    idx = (eco['Var'] == 'COSTS') & ((eco['Subvar'] == 'GENERATION_OPERATIONAL_COSTS') |\
-                        (eco['Subvar'] == 'GENERATION_FUEL_COSTS') | (eco['Subvar'] == 'GENERATION_CO2_TAX')) & (eco['Tech'] == tech.replace('-CCS', '')) & (eco['F'] == fuel) &\
-                            (eco['R'] == balmorel_region) & (eco['Y'] == year)
-
                     # Index for production
                     idx2 = (pro['Commodity'] == 'ELECTRICITY') & (pro['R'] == balmorel_region) & (pro['F'] == fuel) & (pro['Tech'] == tech.replace('-CCS', '')) & (pro['Y'] == year)
                     
                     # Filtering CCS techs
                     if CCStech:
                         idx_cap = idx_cap & (cap.G.str.find('CCS') != -1) 
-                        idx = idx & (eco.G.str.find('CCS') != -1)
                         idx2 = idx2 & (pro.G.str.find('CCS') != -1)
                     else:
                         idx_cap = idx_cap & (cap.G.str.find('CCS') == -1) 
-                        idx = idx & (eco.G.str.find('CCS') == -1)
                         idx2 = idx2 & (pro.G.str.find('CCS') == -1)
                         
                     
@@ -221,7 +212,7 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                         capex += get_capex(cap, idx_cap, GDATA, ANNUITYCG)
                         Nreg += 1 # The technology existed in this region, so increment by one (used to average after)                   
                         
-                        mc_cost_temp = get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL)
+                        mc_cost_temp = get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL, ANNUITYCG)
                         
                         if not(pd.isna(mc_cost_temp)):
                             mc_cost += mc_cost_temp # Add to sum of marginal costs over Balmorel regions
@@ -842,7 +833,7 @@ def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  ye
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(result: MainResults, scenario: str, year: int, temporal_resolution: dict, style: str = 'report'):
+def create_demand_response(weather_years: list, result: MainResults, scenario: str, year: int, temporal_resolution: dict, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
@@ -867,13 +858,13 @@ def create_demand_response(result: MainResults, scenario: str, year: int, tempor
         # Compute supply curves from Balmorel results
         all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity, temporal_resolution) # all, for later
         fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
+        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, 0, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
         for region in regions:
         
             # Apply supply curves to the Antares model
-            unserved_energy_cost = model_supply_curves_in_antares(all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
+            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
     
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
@@ -1026,7 +1017,7 @@ def main(ctx, sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(res, SC, year, temporal_resolution, style)
+    create_demand_response(ctx.obj['weather_years'], res, SC, year, temporal_resolution, style)
     create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   

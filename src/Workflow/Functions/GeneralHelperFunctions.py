@@ -224,22 +224,27 @@ def create_transmission_input(wk_dir, ant_study, area_from, area_to, trans_cap, 
                 f.write(str(int(trans_cap[1])) + '\n')  
         
 
-def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
+def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL, ANNUITYCG, include_capital_costs: bool = True):
     """Gets average marginal cost of generators in cap[idx_cap], provided VOM, fuel and emission policy data 
 
     Args:
-        year (_type_): _description_
-        cap (_type_): _description_
-        idx_cap (_type_): _description_
-        totalcap (_type_): _description_
-        GDATA (_type_): _description_
-        FPRICE (_type_): _description_
-        FDATA (_type_): _description_
-        EMI_POL (_type_): _description_
+        year (str): Year in string
+        cap (pd.DataFrame): All capacities
+        idx_cap (pd.DataFrame): Index for capacities
+        fuel (str): Fuel for generator
+        GDATA (pd.DataFrame): Technology data
+        FPRICE (pd.DataFrame): Fuel prices
+        FDATA (pd.DataFrame): Fuel data
+        EMI_POL (pd.DataFrame): Emission policy (if carbon tax)
+        ANNUITYCG (pd.DataFrame): Annuity (if capital cost included)
+        include_capital_costs (bool): Include CAPEX and Fixed O&M to marginal price?
     """
     ## Weighting capacities on highest data level (G)
     totalcap = cap.loc[idx_cap, 'Value'].sum() * 1e3 # MW
-        
+    country = cap.loc[idx_cap, 'C'].unique()[0] # Should just be one country
+    
+    print(country)
+    
     mc_cost_temp = 0
     for G in cap[idx_cap].G.unique():
         Gcap = cap.loc[idx_cap & (cap.G == G), 'Value'].sum() * 1e3 # MW
@@ -277,6 +282,28 @@ def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
             # print('Added CO2 cost: ', mc_cost_temp)
         except:
             pass
+        
+        if include_capital_costs:
+        
+            # The issue with this is that you don't know when the generators produce!
+            # A lot of the capital costs could be allocated to a few hours, such as common ~3000 €/MWh prices in Balmorel investment opt results.
+            # A flat / 8760 distribution is not realistic
+        
+            # CAPEX   
+            try:
+                # Get endogenous share
+                endo_share = cap.query('Var == "ENDOGENOUS"').loc[idx_cap & (cap.G == G), 'Value'].sum() * 1e3 / Gcap
+                # print(f'Endogenous share for {G}: {endo_share*100} %')
+                mc_cost_temp += GDATA.loc[(G, 'GDINVCOST0'), 'Value'] * 1e6 / 8760 * Gcap * endo_share * ANNUITYCG.loc[(country, G), 'Value'] / totalcap
+                
+            except:
+                pass
+                
+            # Fixed O&M
+            try:
+                mc_cost_temp += GDATA.loc[(G, 'GDOMFCOST0'), 'Value'] * 1e3 / 8760 * Gcap / totalcap
+            except:
+                pass
         
     return mc_cost_temp
 

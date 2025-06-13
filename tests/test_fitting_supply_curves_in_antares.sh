@@ -1,0 +1,1 @@
+python -m Workflow.Functions.build_supply_curves fitting_supply_curves
