@@ -97,7 +97,7 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
 
 @click.pass_context
 def get_heat_demand(ctx, result: MainResults, scenario: str, 
-                    model_year: int, weather_year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                    model_year: int, weather_year: int, hour_index: list = None, balmorel_index: pd.MultiIndex = None,
                     to_create_antares_input: bool = False):
     """Calculate inverse residual load for the supply curve fitting functions
 
@@ -159,7 +159,7 @@ def get_supply_curve_parameters_fit(ctx, result: MainResults, scenario: str, yea
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
 @click.pass_context
-def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, year: int, commodity: str, temporal_resolution: dict):
+def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, year: int, commodity: str):
     """Get parameters for supply curve fitting depending on the commodity
         
     Args:
@@ -182,9 +182,9 @@ def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, yea
     
     for weather_year in weather_years:
         if commodity.upper() == 'HEAT':
-            temp = get_heat_demand(result, scenario, year, weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'], to_create_antares_input=True)
+            temp = get_heat_demand(result, scenario, year, weather_year, to_create_antares_input=True)
         elif commodity.upper() == 'HYDROGEN':
-            temp = get_inverse_residual_load(result, scenario, year, weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'], to_create_antares_input=True)
+            temp = get_inverse_residual_load(result, scenario, year, weather_year, to_create_antares_input=True)
         else:
             raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
