@@ -22,7 +22,7 @@ def main(antares_result: str,
 
     print('\n', '='*6, 'Antares', '='*6)
     print('Heat: ', ENDO_EL['HEAT'], 'TWh')
-    print('Heat: ', ENDO_EL['HYDROGEN'], 'TWh')
+    print('Hydrogen: ', ENDO_EL['HYDROGEN'], 'TWh')
     print('\n', '='*6, 'Balmorel', '='*6)
     print(df.query('Category in ["ENDOGENOUS_ELECT2HEAT", "ENDO_H2"]').pivot_table(index='Category', values='Value', aggfunc='sum').to_string(), '\n')
 
