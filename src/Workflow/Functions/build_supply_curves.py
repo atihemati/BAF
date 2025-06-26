@@ -15,6 +15,7 @@ import matplotlib.colors as mcolors
 import pandas as pd
 import click
 import pickle
+from sklearn.cluster import KMeans
 import os
 import configparser
 from pybalmorel import Balmorel, MainResults
@@ -344,7 +345,7 @@ def get_supply_curves(scenario: str,
                       parameters: pd.DataFrame,
                       fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
-                      precision: int = 0,
+                      cluster_size: int = 10,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
                       style: str = 'report'):
@@ -357,7 +358,7 @@ def get_supply_curves(scenario: str,
         parameters (pd.DataFrame): The dataframe containing the parameter values for all regions, seasons and time steps with columns ['Region', 'Season', 'Time']
         fuel_consumption (pd.DataFrame): Fuel consumption results. 
         el_prices (pd.DataFrame): Electricity prices.
-        precision (int): The precision to fit parameter values to (NOTE: This is problematic when you start having smaller countries in the scope! Should be made dependent on the absolute magnitude of profiles)
+        cluster_size (int): The amount of supply curves to build for a respective parameter (NOTE: This is problematic when you start having smaller countries in the scope! Should be made dependent on the absolute magnitude of profiles)
         plot_overall_curves (bool, optional): Plot regional heat and hydrogen supply curves?
         plot_all_curves (bool, optional): Plot stepfunction fit of ALL technologies and regional heat and hydrogen supply curves?
         style (str, optional): Style of supply curve plot. Defaults to 'report'.
@@ -379,8 +380,10 @@ def get_supply_curves(scenario: str,
     # Prepare parameters to iterate through and colors for plotting them
     regions = df1_temp.Region.unique()
     parameter_name = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])][0]
-    parameters = parameters.round({parameter_name : precision}) # NOTE: This will be a problem when you have smaller countries in the model
-
+    
+    ## Cluster parameters 
+    parameters = parameters.groupby('Region').apply(lambda x: cluster_values(x, cluster_size))
+    
     # Prepare fit result data
     resulting_curves = {region : dict() for region in regions}      
 
@@ -389,18 +392,31 @@ def get_supply_curves(scenario: str,
         fig_season, ax_parameter = plt.subplots(facecolor='none')
         
         region_parameters = parameters.query('Region == @region')
-        unique_parameters = region_parameters[parameter_name].unique()
+        unique_parameters = region_parameters['Cluster'].unique()
+        # print('Unique parameters: \n', unique_parameters)
+        print('='*20, '\n', f'Fitting supply curves for {commodity} in {region}...')
+        print('='*20)
         
-        print(f'Fitting supply curves for {commodity} in {region}...')
-        
-        for parameter in unique_parameters:
+        for cluster in range(cluster_size):
             
+            # Placeholders
             supply_curves_x, supply_curves_y = [], []
-            season, time, parameter_value = region_parameters.query(f'{parameter_name} == @parameter')[['Season', 'Time', parameter_name]].values[0]
+            
+            # Find seasons and times of the unique parameter 
+            temp = region_parameters.query('Cluster == @cluster')[['Season', 'Time', parameter_name]]
+            average_parameter = np.round(temp.Value.mean())
+            seasons = temp['Season'].to_list()
+            times = temp['Time'].to_list()
+            print(f'Cluster {cluster}, Average {parameter_name} = {average_parameter}') 
+            # print(f'...for seasons {seasons} and times {times}')
             
             for area in df1_temp.query('Region == @region').Area.unique():
                 
-                df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Season == @season and Time == @time').pivot_table(index=['Season', 'Time'], columns='Generation', values='Value')
+                # Get technologies consuming electricity in area
+                df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Season in @seasons and Time in @times').pivot_table(index=['Season', 'Time'], columns='Generation', values='Value', aggfunc='sum')
+                
+                # if len(df1.columns) > 0:
+                    # print(f'Electricity consumption in {area}:\n', df1)
 
                 for tech in df1.columns:
                     
@@ -408,9 +424,13 @@ def get_supply_curves(scenario: str,
                     if df1.loc[:, tech].max() < 1e-5:
                         continue
                     
-                    df2=df2_temp.query('Scenario==@scenario and Region==@region and Season == @season and Time == @time').pivot_table(index=['Season', 'Time'], values='Value')
+                    # Get electricity prices at hours
+                    df2=df2_temp.query('Scenario==@scenario and Region==@region and Season in @seasons and Time in @times').pivot_table(index=['Season', 'Time'], values='Value', aggfunc='mean')
+                    # print(f'Electricity prices:\n', df2)
 
+                    # Get combined dataframe with electricity consumption (df1) and price (df2, Value)
                     temp=df1[[tech]].merge(df2[['Value']], left_index=True, right_index=True).fillna(0)
+                    # print(f'Consumption and price for {tech} in {area}:\n', temp)
 
                     # Piecewise linear fit
                     fit_x, fit_y = get_supply_curve(temp.loc[:, 'Value'].values.flatten(),
@@ -423,25 +443,27 @@ def get_supply_curves(scenario: str,
                     if plot_all_curves:
                         fig, ax = plt.subplots()
                         temp.plot(kind='scatter', x='Value', y=tech, ax=ax, 
-                                    label=parameter)
+                                    label=average_parameter)
                         ax.plot(fit_x, fit_y)
                         ax.set_ylabel(f'{tech} (MWh)')
                         ax.set_xlabel('Electricity Price (€/MWh)')
                         ax.set_title(area)
                         ax.legend(loc='center left', bbox_to_anchor=(1.05, .5))
-                        fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{parameter_name}{parameter:0.2f}.png', bbox_inches='tight')
+                        fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{parameter_name}{average_parameter:0.2f}.png', bbox_inches='tight')
                     
             if len(supply_curves_x) != 0:
+                # print('='*10, '\nsupply curves x:\n', supply_curves_x, '\nsupply curves y:\n', supply_curves_y)
                 combined_x, combined_y = combine_multiple_supply_curves(supply_curves_x, supply_curves_y)
+                # print('\n', '='*10, '\ncombined supply curve x:\n', combined_x, '\ncombined supply curve y:\n', combined_y)
             else:
                 combined_x, combined_y = [0, 0], [0, 0]
                 
             # Plot overall curve    
             if plot_all_curves or plot_overall_curves:
-                ax_parameter.plot(combined_x, combined_y, label=parameter_value)
+                ax_parameter.plot(combined_x, combined_y, label=average_parameter)
 
             # Store seasonal curves   
-            resulting_curves[region][parameter_value] = {'price' : np.round(combined_x),
+            resulting_curves[region][average_parameter] = {'price' : np.round(combined_x),
                                                         'capacity' : np.round(combined_y)}
 
 
@@ -456,6 +478,12 @@ def get_supply_curves(scenario: str,
                                 bbox_inches='tight')
             
     return resulting_curves
+
+def cluster_values(group: pd.DataFrame, cluster_size: int):
+    values = group['Value'].values.reshape(-1, 1)
+    kmeans = KMeans(n_clusters=min(cluster_size, len(group)), random_state=42)  # min() handles cases with <7 samples
+    group['Cluster'] = kmeans.fit_predict(values)
+    return group
 
 def find_closest_indices_with_cut(column, Y):
     """Find the indices in a column, that are closest to each value in the list Y
@@ -528,9 +556,11 @@ def model_supply_curves_in_antares(weather_years: list,
     
     # Delete all thermal clusters in virtual region
     virtual_area = f'{region}_{commodity}'.lower()
+
     try:
         antares_input.purge_thermal_clusters(virtual_area)
     except FileNotFoundError:
+        # already not existing
         pass
     
     # Map the parameters not captured by Balmorel timeslices to the closest fitted parameter
@@ -550,11 +580,12 @@ def model_supply_curves_in_antares(weather_years: list,
         if max_price_for_parameter >= highest_price:
             highest_price = max_price_for_parameter + 1
 
-        # Take difference between max and min, which will equal the availabilities at aggregated (rounded) prices
-        diff = temp.groupby(['price']).aggregate({'capacity' : 'max'}) - temp.groupby(['price']).aggregate({'capacity' : 'min'})
+        # Take difference between all values and sum, which will equal the availabilities at aggregated (rounded) prices
+        temp['capacity'] = temp.capacity.diff().fillna(0)
+        temp = temp.groupby(['price']).aggregate({'capacity' : 'sum'})
         
         # Get rounded prices
-        prices = np.unique([round(price) for price in diff.index])
+        prices = np.unique([round(price) for price in temp.index if temp.loc[price, 'capacity'] > 0])
         
         # if len(prices) > 0:
         #     print(prices)
@@ -567,11 +598,11 @@ def model_supply_curves_in_antares(weather_years: list,
             cluster_name = f'{price:.0f}_europermwh'
             if not(cluster_name in availability.keys()):
                 availability[cluster_name] = np.zeros((8760, len(weather_years)))
-                max_cap = diff.loc[price, 'capacity']
-            elif availability[cluster_name].max() > diff.loc[price, 'capacity']:
+                max_cap = temp.loc[price, 'capacity']
+            elif availability[cluster_name].max() > temp.loc[price, 'capacity']:
                 max_cap = availability[cluster_name].max()
             else:
-                max_cap = diff.loc[price, 'capacity']
+                max_cap = temp.loc[price, 'capacity']
             
             config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                     True, max_cap, price)
@@ -581,13 +612,13 @@ def model_supply_curves_in_antares(weather_years: list,
                 # print(i, weather_year)
                 # print('='*6, 'The indices: \n', idx_mapped[weather_year][parameter])
                 # print('='*6, 'Availabilities before: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
-                availability[cluster_name][idx_mapped[weather_year][parameter], i] = diff.loc[price, 'capacity']
+                availability[cluster_name][idx_mapped[weather_year][parameter], i] = temp.loc[price, 'capacity']
                 # print('='*6, 'Availabilities after: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
                 # print('='*6, 'Capacity should be equal to that: \n', diff.loc[price, 'capacity'])
 
         # Set load
         for i, weather_year in enumerate(weather_years):
-            load[idx_mapped[weather_year][parameter], i] = diff.loc[:, 'capacity'].sum()
+            load[idx_mapped[weather_year][parameter], i] = temp.loc[:, 'capacity'].sum()
 
     # Save load and availability
     np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')
