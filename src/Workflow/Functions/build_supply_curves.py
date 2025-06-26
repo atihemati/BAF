@@ -391,20 +391,21 @@ def get_supply_curves(scenario: str,
 
         fig_season, ax_parameter = plt.subplots(facecolor='none')
         
+        # Get regional parameters and amount of clusters
         region_parameters = parameters.query('Region == @region')
-        unique_parameters = region_parameters['Cluster'].unique()
-        # print('Unique parameters: \n', unique_parameters)
+        clusters = region_parameters['Cluster'].unique()
+        
         print('='*20, '\n', f'Fitting supply curves for {commodity} in {region}...')
         print('='*20)
         
-        for cluster in range(cluster_size):
+        for cluster in clusters:
             
             # Placeholders
             supply_curves_x, supply_curves_y = [], []
             
             # Find seasons and times of the unique parameter 
             temp = region_parameters.query('Cluster == @cluster')[['Season', 'Time', parameter_name]]
-            average_parameter = np.round(temp.Value.mean())
+            average_parameter = np.round(temp[parameter_name].mean())
             seasons = temp['Season'].to_list()
             times = temp['Time'].to_list()
             print(f'Cluster {cluster}, Average {parameter_name} = {average_parameter}') 
@@ -592,7 +593,6 @@ def model_supply_curves_in_antares(weather_years: list,
         
         # Create a cluster per price 
         for price in prices:
-            # print(price)
             
             # Get max capacity and initiate availability timeseries if it doesn't exist yet
             cluster_name = f'{price:.0f}_europermwh'
@@ -609,13 +609,8 @@ def model_supply_curves_in_antares(weather_years: list,
         
             # Set availability of virtual cluster
             for i, weather_year in enumerate(weather_years):
-                # print(i, weather_year)
-                # print('='*6, 'The indices: \n', idx_mapped[weather_year][parameter])
-                # print('='*6, 'Availabilities before: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
                 availability[cluster_name][idx_mapped[weather_year][parameter], i] = temp.loc[price, 'capacity']
-                # print('='*6, 'Availabilities after: \n', availability[cluster_name][idx_mapped[weather_year][parameter], i])
-                # print('='*6, 'Capacity should be equal to that: \n', diff.loc[price, 'capacity'])
-
+                
         # Set load
         for i, weather_year in enumerate(weather_years):
             load[idx_mapped[weather_year][parameter], i] = temp.loc[:, 'capacity'].sum()
