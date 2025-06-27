@@ -212,7 +212,7 @@ def antares_thermal_capacities(db: gams.GamsDatabase,
                         capex += get_capex(cap, idx_cap, GDATA, ANNUITYCG)
                         Nreg += 1 # The technology existed in this region, so increment by one (used to average after)                   
                         
-                        mc_cost_temp = get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL, ANNUITYCG)
+                        mc_cost_temp = get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL, ANNUITYCG, include_capital_costs=False)
                         
                         if not(pd.isna(mc_cost_temp)):
                             mc_cost += mc_cost_temp # Add to sum of marginal costs over Balmorel regions
