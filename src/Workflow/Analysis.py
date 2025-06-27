@@ -3,6 +3,7 @@
 ### ------------------------------- ###
 
 import gams
+import gams.control
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -18,9 +19,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pybalmorel.utils import symbol_to_df
 from pybalmorel.formatting import balmorel_colours
-from Functions.Formatting import newplot, set_style, stacked_bar
-from Functions.GeneralHelperFunctions import filter_low_max, AntaresOutput
-from Functions.antaresViz import stacked_plot
+from .Functions.Formatting import newplot, set_style, stacked_bar
+from .Functions.GeneralHelperFunctions import filter_low_max, AntaresOutput
+from .Functions.antaresViz import stacked_plot
 import warnings
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
@@ -69,7 +70,7 @@ def get_balmorel_results(ctx,
         temp.loc[:, 'Iter'] = ctx.obj['i']
         temp = temp.groupby(['Y', 'To', 'Iter', 'From']).aggregate({'Value' : 'sum'})
         h2trans = pd.concat((h2trans, temp))
-    except ValueError:
+    except gams.control.GamsException:
         print('No hydrogen transmission')
 
     ## Get Demand

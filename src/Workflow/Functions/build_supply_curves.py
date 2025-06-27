@@ -40,7 +40,7 @@ def load_OSMOSE_data_to_context(ctx, data, stoch_year_data):
     
 @click.pass_context
 def get_inverse_residual_load(ctx, result: MainResults, scenario: str, 
-                              model_year: int, weather_year: int, hour_index: list, balmorel_index: pd.MultiIndex,
+                              model_year: int, weather_year: int, hour_index: list = None, balmorel_index: pd.MultiIndex = None,
                               to_create_antares_input: bool = False):
     """
     Args:
@@ -64,9 +64,10 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
     for data in ['onshore_wind', 'offshore_wind', 'solar_pv', 'load', 'heat']:
         
         if data != 'load':
-            all_data[data] = ctx.obj[data][weather_year]
+            all_data[data] = ctx.obj[data][weather_year].copy()
         else:
-            all_data[data] = ctx.obj[data][0]
+            all_data[data] = ctx.obj[data][0].copy()
+        
         
         all_data[data].index = np.array(all_data[data].index) - 1 # make index start from zero
         all_data[data].index.name = 'time_id'
@@ -74,7 +75,7 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
         if not(to_create_antares_input):
             all_data[data] = all_data[data].loc[hour_index]
             all_data[data].index = balmorel_index
-        
+            
     # Calculate VRE profiles
     capacities = result.get_result('G_CAP_YCRAF').query('Scenario == @scenario and Year == @model_year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV"]').pivot_table(columns=['Region'], index='Technology', values='Value', aggfunc='sum', fill_value=0)
     regions = capacities.columns
@@ -114,7 +115,7 @@ def get_heat_demand(ctx, result: MainResults, scenario: str,
     
     # Get data
     model_year = str(model_year)
-    heat_profile = ctx.obj['heat'][weather_year]
+    heat_profile = ctx.obj['heat'][weather_year].copy()
     heat_profile.index = np.array(heat_profile.index) - 1 # make index start from zero
     heat_profile.index.name = 'time_id'
 
