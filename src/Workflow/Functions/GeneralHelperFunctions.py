@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 from functools import wraps
+from pybalmorel import MainResults
 from pybalmorel.utils import symbol_to_df 
 import shutil
 import os
@@ -58,24 +59,24 @@ def log_process_time(file_path, iteration, process_name, delta_time):
             file.write('Iteration,Process,Time\n')
             file.write('%d,%s,%d\n'%(iteration, process_name, delta_time))
             
-def get_balmorel_time_and_hours(ALLENDOFMODEL: gams.GamsDatabase):
+def get_balmorel_time_and_hours(result: MainResults):
     """Get the temporal resolution using all_endofmodel.gdx
 
     Args:
-        ALLENDOFMODEL (gams.GamsDatabase): _description_
+        result (MainResults): _description_
 
     Returns:
         pd.MultiIndex, list: pandas index of Balmorel timeslices, list of corresponding hours in a year 
     """
     
-    # Get balmorel_index
-    S = symbol_to_df(ALLENDOFMODEL, 'S')
-    T = symbol_to_df(ALLENDOFMODEL, 'T')
-    balmorel_index = pd.MultiIndex.from_product((list(S.SSS), list(T.TTT)), names=('Season', 'Time'))
+    # Get balmorel_index from electricity prices, which are defined for all hours since it's a dual variable
+    elprices = result.get_result('EL_PRICE_YCRST')
+    S, T  = pd.Series(elprices['Season'].unique()), pd.Series(elprices['Time'].unique())
+    balmorel_index = pd.MultiIndex.from_product((list(S), list(T)), names=('Season', 'Time'))
     
     # Convert to hours in a year    
-    weeks = S['SSS'].str.lstrip('S').astype(int)
-    hours = T['TTT'].str.lstrip('T').astype(int)
+    weeks = S.str.lstrip('S').astype(int)
+    hours = T.str.lstrip('T').astype(int)
     hour_index = [(week-1)*168 + hour - 1 for week in weeks for hour in hours]
     
     return balmorel_index, hour_index

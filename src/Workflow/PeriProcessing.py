@@ -975,16 +975,18 @@ def main(ctx, sc_name: str, year: str):
     GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
     GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
     CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
-    balmorel_index, hour_index = get_balmorel_time_and_hours(ALLENDOFMODEL)
-    temporal_resolution = {'balmorel_index' : balmorel_index,
-                           'hour_index' : hour_index}
     del ALLENDOFMODEL, ws # Release some memory
 
 
     ## Loading MainResults
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
     res = MainResults(files='MainResults_%s.gdx'%SC, paths='Balmorel/%s/model/'%SC_folder, system_directory=gams_system_directory)
-
+    
+    ## Temporal resolution
+    balmorel_index, hour_index = get_balmorel_time_and_hours(res)
+    temporal_resolution = {'balmorel_index' : balmorel_index,
+                           'hour_index' : hour_index}
+    
     # Renewable Capacities
     fAntTechno, cap = antares_vre_capacities(res.db[SC], B2A_ren, A2B_regi, 
                                              GDATA, ANNUITYCG,
