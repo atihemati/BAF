@@ -13,7 +13,7 @@ def main(antares_result: str,
     ENDO_EL = {'HEAT' : 0,
             'HYDROGEN' : 0}
     for area in ['DE', 'FR', 'ES']:
-        for commodity in ['HEAT']:
+        for commodity in ['HEAT', 'HYDROGEN']:
             res = antout.load_link_results([area, '_'.join([area, commodity])], temporal='annual')['FLOW LIN.']   
             ENDO_EL[commodity] += float(res.sum()) / 1e6
                         

@@ -38,8 +38,8 @@ unzip -qq -o BAF-Data_branch_version.zip
 
 If unzipping the data file on a HPC, you may need to ensure writing capabilities on the extracted files by doing the following commands on the extracted folders: 
 ```
-chmod -R +x data
-chmod -R +x Pre-Processing
+chmod -R +x Pre-Processing/Output
+chmod -R +x Pre-Processing/Data
 chmod -R +x input
 ```
 
