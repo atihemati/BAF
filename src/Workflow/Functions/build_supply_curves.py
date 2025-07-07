@@ -346,6 +346,7 @@ def get_supply_curves(scenario: str,
                       parameters: pd.DataFrame,
                       fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
+                      cluster: bool, 
                       cluster_size: int = 10,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
@@ -383,7 +384,10 @@ def get_supply_curves(scenario: str,
     parameter_name = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])][0]
     
     ## Cluster parameters 
-    parameters = parameters.groupby('Region').apply(lambda x: cluster_values(x, cluster_size))
+    if cluster:
+        parameters = parameters.groupby('Region').apply(lambda x: cluster_hours(x, cluster_size))
+    else:
+        parameters = parameters.groupby('Region').apply(lambda x: use_all_hours(x))
     
     # Prepare fit result data
     resulting_curves = {region : dict() for region in regions}      
@@ -481,10 +485,14 @@ def get_supply_curves(scenario: str,
             
     return resulting_curves
 
-def cluster_values(group: pd.DataFrame, cluster_size: int):
+def cluster_hours(group: pd.DataFrame, cluster_size: int):
     values = group['Value'].values.reshape(-1, 1)
-    kmeans = KMeans(n_clusters=min(cluster_size, len(group)), random_state=42)  # min() handles cases with <7 samples
+    kmeans = KMeans(n_clusters=min(cluster_size, len(group)), random_state=42)  # min() handles cases with <7 samples, random state is fixed
     group['Cluster'] = kmeans.fit_predict(values)
+    return group
+
+def use_all_hours(group: pd.DataFrame):
+    group['Cluster'] = np.arange(1, len(group)+1)
     return group
 
 def find_closest_indices_with_cut(column, Y):
