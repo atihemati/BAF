@@ -67,7 +67,10 @@ def CLI(ctx):
     ctx.ensure_object(dict)
     ctx.obj['geographical_scope'] = Config.get('PreProcessing', 'geographical_scope').replace(' ', '').split(',')
     
-    # Detect which command has been passedh
+    # Set Balmorel weather year choice
+    ctx.obj['balmorel_weather_year'] = balmorel_weather_year
+    
+    # Detect which command has been passed
     command = ctx.invoked_subcommand
     
     ## Define Balmorel time index
@@ -78,13 +81,13 @@ def CLI(ctx):
         ctx.obj['ST'] = [S + ' . ' + T for S in ctx.obj['S'] for T in ctx.obj['T']]
         
     ## Set paths for data
-    if command in ['generate-antares-vre', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
+    if command in ['generate-antares-vre', 'generate-balmorel-timeseries', 'generate-balmorel-heat-series', 'generate-balmorel-annual-heat-adjustment']:
         data_context()
 
     ## Set weather years
     if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
         ctx.obj['weather_years'] = [balmorel_weather_year]
-    elif command == 'generate-antares-vre':
+    elif command in ['generate-antares-vre', 'generate-balmorel-annual-heat-adjustment']:
         ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
                                     1987, 1988, 1989, 1990, 1991, 
                                     1992, 1993, 1994, 1995, 1996, 
@@ -339,7 +342,8 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
     }
     
     # Format data
-    year_data_column = list(stoch_year_data.keys())[0]
+    ## Only the chosen weather year for Balmorel is loaded here 
+    year_data_column = list(stoch_year_data.keys())[0] 
     df = stoch_year_data[year_data_column]
     FLH = df.sum()
     df = df.loc[:8736, :] # Just leave out the last (two last) day(s)
@@ -368,8 +372,8 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
 @load_OSMOSE_data(files=['heat'])
 def generate_balmorel_heat_series(ctx, data: str, stoch_year_data: dict):
     # Format data
-    year_data_column = list(stoch_year_data.keys())[0]
-    df = stoch_year_data[year_data_column]
+    weather_year = ctx.obj['balmorel_weather_year']
+    df = stoch_year_data[weather_year]
     df = df.loc[:8736, :] # Just leave out the last (two last) day(s)
     df.index = ctx.obj['ST']  
     df.columns.name = ''
@@ -384,12 +388,96 @@ def generate_balmorel_heat_series(ctx, data: str, stoch_year_data: dict):
     df_dh.columns = pd.Series(df_dh.columns).str.replace('_IDVU-SPACEHEAT', '_A')
 
     incfiles = create_incfiles(names=['DH_VAR_T', 'INDIVUSERS_DH_VAR_T'],
-                               weather_year=ctx.obj['weather_years'][0],
+                               weather_year=weather_year,
                                bodies={'DH_VAR_T' : df_dh,
                                        'INDIVUSERS_DH_VAR_T' : df})
 
     for incfile in incfiles.values():
         incfile.save()
+
+@CLI.command()
+@click.pass_context
+@load_OSMOSE_data(files=['heat'])
+def generate_balmorel_annual_heat_adjustment(ctx, data: str, stoch_year_data: dict):
+    
+    # Get factors on annual heat demand
+    weather_year = ctx.obj['balmorel_weather_year']
+    factors, normal_year = get_annual_heat_demand_factor(stoch_year_data, weather_year)
+    
+    # Add the factor commands to DH.inc and INDIVUSERS_DH.inc 
+    DH_COMMANDS = f'* Weather year {weather_year} factors relative to normal weather year {normal_year}, based on sum of heat demand throughout regions\n'
+    INDIVDH_COMMANDS = f'* Weather year {weather_year} factors relative to normal weather year {normal_year}, based on sum of heat demand throughout regions\n'
+    
+    for region in factors.index:
+        # 80% of district heating demand is space heating
+        DH_COMMANDS += f"DH(YYY, AAA, DHUSER)$RRRAAA('{region}', AAA) = 0.8*{factors[region]}*DH(YYY, AAA, DHUSER)$RRRAAA('{region}', AAA) + 0.2*DH(YYY, AAA, DHUSER)$RRRAAA('{region}', AAA);\n"
+        
+        # Choosing only space heat individual heating areas
+        INDIVDH_COMMANDS += f"DH(YYY, '{region}_IDVU-SPACEHEAT', 'TERTIARY'   ) = {factors[region]}*DH(YYY, '{region}_IDVU-SPACEHEAT', 'TERTIARY'   );\n"
+        INDIVDH_COMMANDS += f"DH(YYY, '{region}_IDVU-SPACEHEAT', 'RESIDENTIAL') = {factors[region]}*DH(YYY, '{region}_IDVU-SPACEHEAT', 'RESIDENTIAL');\n"
+
+    replace_text_in_file('Balmorel/base/data/DH.inc', DH_COMMANDS)
+    replace_text_in_file('Balmorel/base/data/INDIVUSERS_DH.inc', INDIVDH_COMMANDS)
+
+def replace_text_in_file(file: str, text: str):
+    """Will add or replace content of a text file within specific modification warning labels
+
+    Args:
+        file (str): The file to append or replace content within warning labels
+        text (str): The text to put within warning labels
+    """
+    
+    # Factor district heat ares by 0.8*factors
+    with open(file, 'r') as f:
+        content = f.read()
+    
+    ## Remove previous insertions
+    before_label = '* ------ DO NOT MODIFY THIS LINE OR BELOW ------'
+    after_label = '* ------ DO NOT MODIFY THIS LINE OR ABOVE ------'
+    if before_label in content and after_label in content:
+        content_cleaned = content.split(before_label)[0] + content.split(after_label)[1]
+    else:
+        content_cleaned = content
+    
+    ## Write new file with content appended to bottom
+    with open(file, 'w') as f:
+        f.write(content_cleaned)
+        f.write('\n')
+        f.write(before_label)
+        f.write('\n')
+        f.write(text)
+        f.write('\n')
+        f.write(after_label)
+        f.write('\n')
+        
+
+def get_annual_heat_demand_factor(stoch_year_data: dict, weather_year: int):
+    """Finds median annual heat demand year and returns the factor
+    calculated relative to the median year, that should be 
+    multiplied to annual heat demand per region
+
+    Args:
+        stoch_year_data (dict): The heat data
+        weather_year (int): The chosen weather year
+
+    Returns:
+        factors (pd.Series): Factors on chosen weather year per region
+        most_normal_year (int): The normal weather year
+    """
+    
+    data = []
+    for year in stoch_year_data.keys():
+        data.append(
+            stoch_year_data[year].sum().to_dict() | {'Weather Year' : year}
+        )
+        
+    df = pd.DataFrame(data).pivot_table(index='Weather Year')
+    idx_of_most_normal_year = df.sum(axis=1).median() == df.sum(axis=1)
+    most_normal_year = df[idx_of_most_normal_year].index[0] # Just take the first one, if there were identical years
+
+    factors = df.loc[weather_year] / df.loc[most_normal_year]
+         
+    return factors, most_normal_year
 
 ### ------------------------------- ###
 ###            Hydropower           ###
