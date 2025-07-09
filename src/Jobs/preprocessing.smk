@@ -15,6 +15,7 @@ rule all:
             "Antares/input/renewables/series/es/onshore/series.txt",
             "Balmorel/base/data/WND_VAR_T.inc",
             "Balmorel/base/data/WTRRRVAR_T.inc",
+            "Balmorel/base/data/done.txt",
             "Balmorel/base/data/DH_VAR_T.inc"
         ]
 
@@ -102,3 +103,13 @@ rule generate_balmorel_heat_series:
         ]
     shell:
         preprocessing_cli_cmd + "generate-balmorel-heat-series"
+
+
+# Rule for generating Balmorel timeseries for heat
+rule generate_balmorel_annual_heat_adjustment:
+    output:
+        [
+            "Balmorel/base/data/done.txt"
+        ]
+    shell:
+        preprocessing_cli_cmd + "generate-balmorel-annual-heat-adjustment"

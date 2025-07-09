@@ -419,6 +419,10 @@ def generate_balmorel_annual_heat_adjustment(ctx, data: str, stoch_year_data: di
     replace_text_in_file('Balmorel/base/data/DH.inc', DH_COMMANDS)
     replace_text_in_file('Balmorel/base/data/INDIVUSERS_DH.inc', INDIVDH_COMMANDS)
 
+    # Output a random file in order to connect snakemake rules
+    with open('Balmorel/base/data/done.txt', 'w') as f:
+        f.write('finished modifying DH.inc and INDIVUSERS_DH.inc')
+
 def replace_text_in_file(file: str, text: str):
     """Will add or replace content of a text file within specific modification warning labels
 
