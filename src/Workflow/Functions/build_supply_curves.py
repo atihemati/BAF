@@ -19,7 +19,7 @@ from sklearn.cluster import KMeans
 import os
 import configparser
 from pybalmorel import Balmorel, MainResults
-from .GeneralHelperFunctions import load_OSMOSE_data, create_transmission_input, AntaresInput
+from .GeneralHelperFunctions import load_OSMOSE_data, create_transmission_input, AntaresInput, set_scenariobuilder_values
 
 ### ------------------------------- ###
 ###           1. Functions          ###
@@ -624,14 +624,20 @@ def model_supply_curves_in_antares(weather_years: list,
         for i, weather_year in enumerate(weather_years):
             load[idx_mapped[weather_year][parameter], i] = temp.loc[:, 'capacity'].sum()
 
-    # Save load and availability
+    # Set load
     np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')
-        
+    
+    # Set transmission capacity equal to the load
     create_transmission_input('./', 'Antares', region, virtual_area, [load.max(), 0], 0.1)
     
+    # Set availability
     for cluster in availability.keys():
         np.savetxt(os.path.join(antares_input.path_thermal_clusters[virtual_area]['series'], cluster, 'series.txt'), 
                    availability[cluster], delimiter='\t', fmt='%g')
+    
+        # Configure weather year playlist, so weather years don't mix
+        set_scenariobuilder_values(f't,{region.lower()}_{commodity.lower()},%d,{cluster.lower()}') 
+        
     
     # Set unserved energy cost for virtual region
     unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))

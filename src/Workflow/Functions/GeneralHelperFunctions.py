@@ -698,6 +698,24 @@ def convert_int_to_mc_year(mc_year: int):
 ###          6. Utilities           ###
 ### ------------------------------- ###
 
+def set_scenariobuilder_values(element: str,
+                               weather_years = 35):
+    """Build the chronological weather year scenarios for an element, so weather years don't mix 
+
+    Args:
+        element (str): The name of the element, should include a '%d' for the weather year formatte
+        weather_years (int, optional): The amount of weather years. Defaults to 35.
+    """
+    
+    scenariobuilder = configparser.ConfigParser()
+    scenariobuilder.read('Antares/settings/scenariobuilder.dat')
+    
+    for weather_year in range(weather_years):
+        scenariobuilder.set('default ruleset', element%weather_year, str(weather_year+1))
+        
+    with open('Antares/settings/scenariobuilder.dat', 'w') as f:
+        scenariobuilder.write(f)
+
 # By ChatGPT
 def find_and_copy_files(source_folder, destination_folder, file_contains):
     # Create the destination folder if it doesn't exist
