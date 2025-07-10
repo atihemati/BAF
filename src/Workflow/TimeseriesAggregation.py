@@ -18,24 +18,11 @@ import numpy as np
 from pybalmorel import Balmorel
 from pybalmorel.utils import symbol_to_df
 import os
-if 'Timeseries Aggregation' in __file__:
-    os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-elif ('Workflow' in __file__) | ('Pre-Processing' in __file__):
-    os.chdir(os.path.dirname(os.path.dirname(__file__)))
-from Functions.GeneralHelperFunctions import doLDC, IncFile, ReadIncFilePrefix
+from Functions.GeneralHelperFunctions import doLDC, IncFile
 try:
     import tsam.timeseriesaggregation as tsam
 except ModuleNotFoundError:
-    print('You need to install tsam to run this script:\npip install tsam')
-
-style = 'report'
-
-if style == 'report':
-    plt.style.use('default')
-    fc = 'white'
-elif style == 'ppt':
-    plt.style.use('dark_background')
-    fc = 'none'
+    raise ModuleNotFoundError('You need to install tsam to run this script:\npip install tsam')
     
 
 def format_and_save_profiles(typPeriods, method, weather_year, Nperiods, db):
@@ -70,11 +57,19 @@ def format_and_save_profiles(typPeriods, method, weather_year, Nperiods, db):
 
     balmseries.index = balmseries.index.get_level_values(0) + ' . ' + balmseries.index.get_level_values(1) 
 
-    loadseries = balmseries['Load']
-    loadseries.index = 'RESE . ' + loadseries.index
+    loadseries = pd.DataFrame()
+    for user in [col.replace('Load - ', '') for col in balmseries.columns.get_level_values(0) if 'Load' in col]:
+        temp = balmseries['Load - %s'%user]
+        temp.index = user + ' . ' + temp.index
+        loadseries = pd.concat((loadseries, temp)).fillna(0)
+    
+    heatseries = pd.DataFrame()
+    for user in [col.replace('Heat - ', '') for col in balmseries.columns.get_level_values(0) if 'Heat' in col]:
+        temp = balmseries['Heat - %s'%user]
+        temp.index = user + ' . ' + temp.index
+        heatseries = pd.concat((heatseries, temp)).fillna(0)
 
     ### 4.3 Save Profiles
-    incfile_prefix_path = 'Pre-Processing/Data/IncFile Prefixes'
     incfiles = {'S' : IncFile(name='S', path='Balmorel/%s/data/'%aggregation_scenario,
                             prefix="SET S(SSS)  'Seasons in the simulation'\n/\n",
                             body=', '.join(S),
@@ -83,13 +78,28 @@ def format_and_save_profiles(typPeriods, method, weather_year, Nperiods, db):
                             prefix="SET T(TTT)  'Time periods within a season in the simulation'\n/\n",
                             body=', '.join(T),
                             suffix="\n/;")}
-    for incfile in ['DE_VAR_T', 'WTRRRVAR_T', 'WTRRSVAR_S', 'WND_VAR_T', 'SOLE_VAR_T']:
+    for incfile in ['DE_VAR_T', 'DH_VAR_T',
+                    'WND_VAR_T', 'SOLE_VAR_T',
+                    'WTRRRVAR_T', 'WTRRSVAR_S',
+                    'HYRSDATA']:
         incfiles[incfile] = IncFile(name=incfile, 
-                                    prefix=f"PARAMETER {incfile}({db[incfile].domains_as_strings}) '{db[incfile].text}'\n",
+                                    prefix=f"PARAMETER {incfile}({", ".join(db[incfile].domains_as_strings)}) '{db[incfile].text}'\n",
                                     path='Balmorel/%s/data/'%aggregation_scenario, suffix='\n;')
+        
+        if 'DE' in incfile or 'DH' in incfile:
+            symbol_prefix = incfile.split('_')[0]
+            symbol_node_name = db[incfile].domains_as_strings[0]
+            domains = ", ".join(db[incfile].domains_as_strings)
+            temporary_symbol_name = symbol_prefix + '_VAR_T1'
+            temporary_symbol_domains = f"{symbol_prefix}USER, SSS, TTT, {symbol_node_name}"
+            incfiles[incfile].prefix = f"PARAMETER {temporary_symbol_name}({temporary_symbol_domains}) '{db[incfile].text}'\n"
+            incfiles[incfile].suffix = f"\n;\n{symbol_prefix + '_VAR_T'}({domains}) = {temporary_symbol_name}({temporary_symbol_domains});\n"
+            incfiles[incfile].suffix += f"{temporary_symbol_name}({temporary_symbol_domains}) = 0;"
+            
 
     # Set bodies
     incfiles['DE_VAR_T'].body = loadseries.to_string()
+    incfiles['DH_VAR_T'].body = heatseries.to_string()
     incfiles['WTRRRVAR_T'].body = balmseries['RoR'].to_string()
     incfiles['WTRRSVAR_S'].body = s_series.to_string()
     incfiles['WND_VAR_T'].body = balmseries['Wind'].to_string()
@@ -143,11 +153,28 @@ def temporal_aggregation(scenario: str,
                     how='outer').fillna(0)
 
     # El. Load
-    df2 = symbol_to_df(m.input_data[scenario], 'DE_VAR_T', ['R', 'Type', 'S', 'T', 'Load']).query(f'R in {IR}').pivot_table(index=['R', 'S', 'T'], columns=['Type'], values=['Load'])
-    df2 = df2['Load'].pivot_table(index=['S', 'T'], columns=['R'], values=['RESE'], fill_value=0)
-    # Assuming RESE, PII, OTHER and DATACENTER have same load profiles!
-    df2.columns = pd.MultiIndex.from_product([['Load'], df2.columns.get_level_values(1)])
-    df = df.join(df2, how='outer').fillna(0)
+    df2 = symbol_to_df(m.input_data[scenario], 'DE_VAR_T', ['R', 'Type', 'S', 'T', 'Load']).query(f'R in {IR}')
+    # df2 = df2['Load'].pivot_table(index=['S', 'T'], columns=['R'], values=['RESE'], fill_value=0)
+    users = df2.Type.unique()
+    for user in users:
+        temp = (
+            df2.query('Type == @user')
+            .rename(columns={'Load' : 'Load - %s'%user})
+            .pivot_table(index=['S', 'T'], columns=['R'], values=['Load - %s'%user], fill_value=0)
+        )
+        df = df.join(temp, how='outer').fillna(0)
+    
+    # Heat Load
+    df2 = symbol_to_df(m.input_data[scenario], 'DH_VAR_T', ['A', 'Type', 'S', 'T', 'Heat']).query(f'A in {IA}')
+    # df2 = df2['Load'].pivot_table(index=['S', 'T'], columns=['R'], values=['RESE'], fill_value=0)
+    users = df2.Type.unique()
+    for user in users:
+        temp = (
+            df2.query('Type == @user')
+            .rename(columns={'Heat' : 'Heat - %s'%user})
+            .pivot_table(index=['S', 'T'], columns=['A'], values=['Heat - %s'%user], fill_value=0)
+        )
+        df = df.join(temp, how='outer').fillna(0)
 
     # Run-of-River
     df = df.join(symbol_to_df(m.input_data[scenario], 'WTRRRVAR_T', ['A', 'S', 'T', 'RoR']).query(f'A in {IA}').pivot_table(index=['S', 'T'], columns=['A'], values=['RoR'], fill_value=0),
@@ -242,8 +269,6 @@ def temporal_aggregation(scenario: str,
 
         typPeriods = aggregation.createTypicalPeriods()
 
-
-
         ### 3.2 Inspect Full Profiles
         for col in df.columns.get_level_values(0).unique():
             agg_func = 'median'
@@ -269,6 +294,7 @@ def temporal_aggregation(scenario: str,
         # typPeriods.loc[:, ('Reservoir', 'AL00_hydro0')].plot()
         # fig, ax = plt.subplots()
         # df['Reservoir', 'AL00_hydro0'].plot()
+
 
         format_and_save_profiles(typPeriods, method, weather_year, (typical_periods, hours_per_period), m.input_data[scenario])
 
