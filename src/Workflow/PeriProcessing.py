@@ -753,19 +753,7 @@ def demand_response_constraint_RHS(scenario: str, year: int,
         _type_: _description_
     """
     
-    commodity = commodity.lower()
-    users = (
-        balmorel_timeseries.set[commodity]
-        .query(f"{balmorel_timeseries.symbols[commodity]['node_name']} == '{node}'")
-        [balmorel_timeseries.symbols[commodity]['user']].unique()
-    )
-    
-    # Read demand profile, storage capacities and transmission capacity
-    
-    ## Demand from all users
-    demand = np.zeros(8736)
-    for user in users:
-        demand += balmorel_timeseries.get_input_profile(scenario, year, commodity, node, user).values[:,0]
+    demand = balmorel_timeseries.get_summed_profile(scenario, year, commodity, node)
     
     ## Storage capacity
     storage = (
@@ -858,7 +846,7 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         # Compute supply curves from Balmorel results
         all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity) # all, for later
         fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, 100, plot_overall_curves=True, style=style)
+        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, cluster=True, cluster_size=10, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
         for region in regions:
