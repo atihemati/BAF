@@ -24,121 +24,17 @@ try:
 except ModuleNotFoundError:
     raise ModuleNotFoundError('You need to install tsam to run this script:\npip install tsam')
     
-
-def format_and_save_profiles(typPeriods, method, weather_year, Nperiods, db):
-    ### Create All S and T index
-    S = np.array(['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)])
-    T = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
-
-    # Make evenly distributed S and T for Balmorel input, based on Nperiods
-    S = list(S[np.linspace(0, 51, Nperiods[0]).round().astype(int)])
-    T = T[:Nperiods[1]]
-    
-    ### Scenario Name       
-    if method == "distributionAndMinMaxRepresentation":
-        aggregation_scenario = 'W%dT%d_%s_WY%d'%(Nperiods[0], Nperiods[1], 'dist', weather_year) 
-    else:
-        aggregation_scenario = 'W%dT%d_%s_WY%d'%(Nperiods[0], Nperiods[1], method[:4], weather_year) 
-        
-    try:
-        os.mkdir('Balmorel/%s'%aggregation_scenario)
-        os.mkdir('Balmorel/%s/data'%aggregation_scenario)
-    except FileExistsError:
-        pass
-
-
-    # Formatting typical periods
-    balmseries = typPeriods.copy()
-    balmseries.index = pd.MultiIndex.from_product((S, T), names=['S', 'T'])
-
-    s_series = balmseries.loc[(slice(None), 'T001'), 'Reservoir']
-    s_series.index = s_series.index.get_level_values(0)
-    s_series.index.name = ''
-
-    balmseries.index = balmseries.index.get_level_values(0) + ' . ' + balmseries.index.get_level_values(1) 
-
-    loadseries = pd.DataFrame()
-    for user in [col.replace('Load - ', '') for col in balmseries.columns.get_level_values(0) if 'Load' in col]:
-        temp = balmseries['Load - %s'%user]
-        temp.index = user + ' . ' + temp.index
-        loadseries = pd.concat((loadseries, temp)).fillna(0)
-    
-    heatseries = pd.DataFrame()
-    for user in [col.replace('Heat - ', '') for col in balmseries.columns.get_level_values(0) if 'Heat' in col]:
-        temp = balmseries['Heat - %s'%user]
-        temp.index = user + ' . ' + temp.index
-        heatseries = pd.concat((heatseries, temp)).fillna(0)
-
-    ### 4.3 Save Profiles
-    incfiles = {'S' : IncFile(name='S', path='Balmorel/%s/data/'%aggregation_scenario,
-                            prefix="SET S(SSS)  'Seasons in the simulation'\n/\n",
-                            body=', '.join(S),
-                            suffix="\n/;"),
-                'T' : IncFile(name='T', path='Balmorel/%s/data/'%aggregation_scenario,
-                            prefix="SET T(TTT)  'Time periods within a season in the simulation'\n/\n",
-                            body=', '.join(T),
-                            suffix="\n/;")}
-    for incfile in ['DE_VAR_T', 'DH_VAR_T',
-                    'WND_VAR_T', 'SOLE_VAR_T',
-                    'WTRRRVAR_T', 'WTRRSVAR_S',
-                    'HYRSDATA']:
-        incfiles[incfile] = IncFile(name=incfile, 
-                                    prefix=f"PARAMETER {incfile}({", ".join(db[incfile].domains_as_strings)}) '{db[incfile].text}'\n",
-                                    path='Balmorel/%s/data/'%aggregation_scenario, suffix='\n;')
-        
-        if 'DE' in incfile or 'DH' in incfile:
-            symbol_prefix = incfile.split('_')[0]
-            symbol_node_name = db[incfile].domains_as_strings[0]
-            domains = ", ".join(db[incfile].domains_as_strings)
-            temporary_symbol_name = symbol_prefix + '_VAR_T1'
-            temporary_symbol_domains = f"{symbol_prefix}USER, SSS, TTT, {symbol_node_name}"
-            incfiles[incfile].prefix = f"PARAMETER {temporary_symbol_name}({temporary_symbol_domains}) '{db[incfile].text}'\n"
-            incfiles[incfile].suffix = f"\n;\n{symbol_prefix + '_VAR_T'}({domains}) = {temporary_symbol_name}({temporary_symbol_domains});\n"
-            incfiles[incfile].suffix += f"{temporary_symbol_name}({temporary_symbol_domains}) = 0;"
-            
-
-    # Set bodies
-    incfiles['DE_VAR_T'].body = loadseries.to_string()
-    incfiles['DH_VAR_T'].body = heatseries.to_string()
-    incfiles['WTRRRVAR_T'].body = balmseries['RoR'].to_string()
-    incfiles['WTRRSVAR_S'].body = s_series.to_string()
-    incfiles['WND_VAR_T'].body = balmseries['Wind'].to_string()
-    incfiles['SOLE_VAR_T'].body = balmseries['Solar'].to_string()
-
-    ## Save
-    for key in incfiles.keys():
-        incfiles[key].save()
-
-
-#%% ------------------------------- ###
-###         1. Reading File         ###
-### ------------------------------- ###
-
-
-def temporal_aggregation(scenario: str, 
-                         typical_periods: int, 
-                         hours_per_period: int, 
-                         method: str = 'distribution', 
-                         balmorel_model_folder: str = '.',
-                         include_GMAXFS: bool = False,
-                         gams_system_directory: str | None = None):
-    """_summary_
-
-    Args:
-        scenario (str): The scenario folder to aggregate.
-        typical_periods (int): Amount of periods / seasons
-        hours_per_period (int): Amount of hours / terms
-        method (str, optional): Aggregation method. Defaults to 'distribution', options are: K-means, K-medoids, Distribution preserving (default) and random choice  
-        balmorel_model_folder (str, optional): The path to the Balmorel folder. Defaults to '.', i.e. in the working directory.
-        include_GMAXFS (bool, optional): Include seasonal fuel availability variations. Defaults to False.
-        gams_system_directory (str | None, optional): The GAMS system directory. Defaults to None, which should make the gams API find it itself if in path.
-    """
+def collect_timeseries(scenario: str, 
+                       balmorel_model_folder: str,
+                       gams_system_directory: str | None = None,
+                       weather_year: int = 2012,
+                       include_GMAXFS: bool = False,
+                       overwrite_input_data: bool = False):
     ### 1.0 Define used weather year (read .inc file description)
-    weather_year = 2009 # 1982 = 1, 2012 = 31
 
     ### 1.1 Read Profiles GDX
     m = Balmorel(balmorel_model_folder, gams_system_directory=gams_system_directory)
-    m.load_incfiles(scenario)
+    m.load_incfiles(scenario, overwrite=overwrite_input_data)
     
     ### Get spatial resolution
     IA = list(symbol_to_df(m.input_data[scenario], 'IA').AAA.unique())
@@ -180,14 +76,14 @@ def temporal_aggregation(scenario: str,
     df = df.join(symbol_to_df(m.input_data[scenario], 'WTRRRVAR_T', ['A', 'S', 'T', 'RoR']).query(f'A in {IA}').pivot_table(index=['S', 'T'], columns=['A'], values=['RoR'], fill_value=0),
                     how='outer').fillna(0)
 
-    #%% 1.2 Get S Timeseries
+    # 1.2 Get S Timeseries
 
     ## Reservoir Inflows
     WTRRSVAR_S = symbol_to_df(m.input_data[scenario], 'WTRRSVAR_S', ['A', 'S', 'Reservoir']).query(f'A in {IA}')
+    # Set all T values to T001
     WTRRSVAR_S['T'] = 'T001' # Add T dimension
     df2 = WTRRSVAR_S.pivot_table(index=['S', 'T'], columns=['A'], values=['Reservoir']).fillna(0)
     df = df.join(df2, how='outer')
-    # Set all T values to T001
     T = df.index.get_level_values(1).unique()
     for T0 in T[1:]:
         df.loc[(slice(None), T0), 'Reservoir'] = df.loc[(slice(None), 'T001'), 'Reservoir'].values
@@ -204,6 +100,35 @@ def temporal_aggregation(scenario: str,
     # df.loc[('S01', 'T001'), ('Wind', 'AL00_A')]
     # # Extracting many values
     # df.loc[('S26', slice(None)), ('Solar', 'AL00_A')]
+    
+    ## Min/Max values
+    HYRSDATA = symbol_to_df(m.input_data[scenario], 'HYRSDATA', ['A', 'HYRSDATASET', 'S', 'Hyrsdata']).query(f'A in {IA}')
+    # Set all T values to T001
+    HYRSDATA['T'] = 'T001' # Add T dimension
+    df2 = (
+        HYRSDATA
+        .query('HYRSDATASET == "HYRSMAXVOL"')
+        .rename(columns={'Hyrsdata' : 'Hyrsdata - HYRSMAXVOL'})
+        .pivot_table(index=['S', 'T'], columns=['A'], values=['Hyrsdata - HYRSMAXVOL']).fillna(0)
+    )
+    df3 = (
+        HYRSDATA
+        .query('HYRSDATASET == "HYRSMINVOL"')
+        .rename(columns={'Hyrsdata' : 'Hyrsdata - HYRSMINVOL'})
+        .pivot_table(index=['S', 'T'], columns=['A'], values=['Hyrsdata - HYRSMINVOL']).fillna(0)
+    )
+    df = df.join(df2, how='outer')
+    df = df.join(df3, how='outer')
+    try:
+        for T0 in T[1:]:
+            df.loc[(slice(None), T0), 'Hyrsdata - HYRSMINVOL'] = df.loc[(slice(None), 'T001'), 'Hyrsdata - HYRSMINVOL'].values
+    except:
+        print('No HYRSMINVOL defined or all zero')
+    try:
+        for T0 in T[1:]:
+            df.loc[(slice(None), T0), 'Hyrsdata - HYRSMAXVOL'] = df.loc[(slice(None), 'T001'), 'Hyrsdata - HYRSMAXVOL'].values
+    except:
+        print('No HYRSMAXVOL defined or unlimited (zero)')
 
     # Create index
     try:
@@ -211,12 +136,142 @@ def temporal_aggregation(scenario: str,
     except ValueError:
         df.index = pd.date_range('%d-01-01 00:00'%weather_year, '%d-12-29 23:00'%weather_year, freq='h') # 8736 h
 
-    #%% ------------------------------- ###
-    ###     2. Using a Random Choice    ###
-    ### ------------------------------- ###
+    return m, df
 
+def format_and_save_profiles(typPeriods, method, weather_year, Nperiods, db):
+    ### Create All S and T index
+    S = np.array(['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)])
+    T = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
+
+    # Make evenly distributed S and T for Balmorel input, based on Nperiods
+    S = list(S[np.linspace(0, 51, Nperiods[0]).round().astype(int)])
+    T = T[:Nperiods[1]]
+    
+    ### Scenario Name       
+    if method == "distributionAndMinMaxRepresentation":
+        aggregation_scenario = 'W%dT%d_%s_WY%d'%(Nperiods[0], Nperiods[1], 'dist', weather_year) 
+    else:
+        aggregation_scenario = 'W%dT%d_%s_WY%d'%(Nperiods[0], Nperiods[1], method[:4], weather_year) 
+        
+    try:
+        os.mkdir('Balmorel/%s'%aggregation_scenario)
+        os.mkdir('Balmorel/%s/data'%aggregation_scenario)
+    except FileExistsError:
+        pass
+
+
+    # Formatting typical periods
+    balmseries = typPeriods.copy()
+    balmseries.index = pd.MultiIndex.from_product((S, T), names=['S', 'T'])
+
+    reservoir_series = balmseries.loc[(slice(None), 'T001'), 'Reservoir']
+    reservoir_series.index = reservoir_series.index.get_level_values(0)
+    reservoir_series.index.name = ''
+    
+    hyrsdatasets = {dataset : balmseries.loc[(slice(None), 'T001'), 'Hyrsdata - %s'%dataset] for dataset in ['HYRSMAXVOL', 'HYRSMINVOL'] if 'Hyrsdata - %s'%dataset in balmseries.columns.get_level_values(0)}
+
+    balmseries.index = balmseries.index.get_level_values(0) + ' . ' + balmseries.index.get_level_values(1) 
+
+    # Fix load and hydro data series
+    loadseries = pd.DataFrame()
+    for user in [col.replace('Load - ', '') for col in balmseries.columns.get_level_values(0).unique() if 'Load' in col]:
+        temp = balmseries['Load - %s'%user]
+        temp.index = user + ' . ' + temp.index
+        loadseries = pd.concat((loadseries, temp)).fillna(0)
+    
+    heatseries = pd.DataFrame()
+    for user in [col.replace('Heat - ', '') for col in balmseries.columns.get_level_values(0).unique() if 'Heat' in col]:
+        temp = balmseries['Heat - %s'%user]
+        temp.index = user + ' . ' + temp.index
+        heatseries = pd.concat((heatseries, temp)).fillna(0)
+
+    hyrsdataseries = pd.DataFrame()
+    for dataset in [dataset for dataset in ['HYRSMAXVOL', 'HYRSMINVOL'] if 'Hyrsdata - %s'%dataset in balmseries.columns.get_level_values(0).unique()]:
+        temp = hyrsdatasets[dataset]
+        temp.index = dataset + ' . ' + temp.index.get_level_values(0)
+        temp.index.name = ''
+        hyrsdataseries = pd.concat((hyrsdataseries, temp)).fillna(0)
+
+    ### 4.3 Save Profiles
+    incfiles = {'S' : IncFile(name='S', path='Balmorel/%s/data/'%aggregation_scenario,
+                            prefix="SET S(SSS)  'Seasons in the simulation'\n/\n",
+                            body=', '.join(S),
+                            suffix="\n/;"),
+                'T' : IncFile(name='T', path='Balmorel/%s/data/'%aggregation_scenario,
+                            prefix="SET T(TTT)  'Time periods within a season in the simulation'\n/\n",
+                            body=', '.join(T),
+                            suffix="\n/;")}
+    for incfile in ['DE_VAR_T', 'DH_VAR_T',
+                    'WND_VAR_T', 'SOLE_VAR_T',
+                    'WTRRRVAR_T', 'WTRRSVAR_S',
+                    'HYRSDATA']:
+        incfiles[incfile] = IncFile(name=incfile, 
+                                    prefix=f"TABLE {incfile}({", ".join(db[incfile].domains_as_strings)}) '{db[incfile].text}'\n",
+                                    path='Balmorel/%s/data/'%aggregation_scenario, suffix='\n;')
+        
+        # Load specific formatting
+        if 'DE' in incfile or 'DH' in incfile:
+            symbol_prefix = incfile.split('_')[0]
+            symbol_node_name = db[incfile].domains_as_strings[0]
+            domains = ", ".join(db[incfile].domains_as_strings)
+            temporary_symbol_name = symbol_prefix + '_VAR_T1'
+            temporary_symbol_domains = f"{symbol_prefix}USER, SSS, TTT, {symbol_node_name}"
+            incfiles[incfile].prefix = f"TABLE {temporary_symbol_name}({temporary_symbol_domains}) '{db[incfile].text}'\n"
+            incfiles[incfile].suffix = f"\n;\n{symbol_prefix + '_VAR_T'}({domains}) = {temporary_symbol_name}({temporary_symbol_domains});\n"
+            incfiles[incfile].suffix += f"{temporary_symbol_name}({temporary_symbol_domains}) = 0;"
+        
+        # HYRSDATA specific formatting
+        if incfile == 'HYRSDATA':
+            incfiles[incfile].prefix = f"TABLE HYRSDATA1(HYRSDATASET, SSS, AAA) '{db[incfile].text}'\n"
+            incfiles[incfile].suffix = f"\n;\nHYRSDATA(AAA, HYRSDATASET, SSS) = HYRSDATA1(HYRSDATASET, SSS, AAA);"
+            incfiles[incfile].suffix += f"\nHYRSDATA1(HYRSDATASET, SSS, AAA) = 0;"
+
+    # Set bodies
+    incfiles['DE_VAR_T'].body = loadseries.to_string()
+    incfiles['DH_VAR_T'].body = heatseries.to_string()
+    incfiles['WTRRRVAR_T'].body = balmseries['RoR'].T.to_string()
+    incfiles['WTRRSVAR_S'].body = reservoir_series.T.to_string()
+    incfiles['HYRSDATA'].body = hyrsdataseries.to_string()
+    incfiles['WND_VAR_T'].body = balmseries['Wind'].T.to_string()
+    incfiles['SOLE_VAR_T'].body = balmseries['Solar'].T.to_string()
+
+    ## Save
+    for key in incfiles.keys():
+        incfiles[key].save()
+
+
+### ------------------------------- ###
+###        2. Main Function         ###
+### ------------------------------- ###
+
+
+def temporal_aggregation(scenario: str, 
+                         typical_periods: int, 
+                         hours_per_period: int, 
+                         method: str = 'distribution', 
+                         weather_year: int = 2012,
+                         balmorel_model_folder: str = '.',
+                         include_GMAXFS: bool = False,
+                         gams_system_directory: str | None = None,
+                         overwrite_input_data: bool = False):
+    """_summary_
+
+    Args:
+        scenario (str): The scenario folder to aggregate.
+        typical_periods (int): Amount of periods / seasons
+        hours_per_period (int): Amount of hours / terms
+        method (str, optional): Aggregation method. Defaults to 'distribution', options are: K-means, K-medoids, Distribution preserving (default) and random choice  
+        weather_year (int): The weather year the data belong to
+        balmorel_model_folder (str, optional): The path to the Balmorel folder. Defaults to '.', i.e. in the working directory.
+        include_GMAXFS (bool, optional): Include seasonal fuel availability variations. Defaults to False.
+        gams_system_directory (str | None, optional): The GAMS system directory. Defaults to None, which should make the gams API find it itself if in path.
+    """
+
+    model, df = collect_timeseries(scenario, balmorel_model_folder, gams_system_directory, weather_year, include_GMAXFS, overwrite_input_data)
+
+    # Using a Random Choice    
     if method == 'random':
-        ### 2.1 Make random time aggregation
+        # Make random time aggregation
         N_timeslices = typical_periods * hours_per_period
         N_hours = len(df)
 
@@ -228,19 +283,16 @@ def temporal_aggregation(scenario: str,
         # Sort chronologically
         agg_steps.sort()
 
-        format_and_save_profiles(df.iloc[agg_steps], 'random', weather_year, (typical_periods, hours_per_period), m.input_data[scenario])
+        format_and_save_profiles(df.iloc[agg_steps], 'random', weather_year, (typical_periods, hours_per_period), model.input_data[scenario])
 
         # Also save a small note with the chosen timesteps
         with open('Balmorel/%s/picked_times.txt'%('W%dT%d_rand_weather_year%d'%(typical_periods, hours_per_period, weather_year)), 'w') as f:
             f.write(pd.Series(df.iloc[agg_steps].index).to_string())
 
+    # Using tsam          
     elif method != 'random':
 
-        #%% ------------------------------- ###
-        ###          3. Using tsam          ###
-        ### ------------------------------- ###
-
-        ### 3.0 Settings    
+        # Method    
         if 'medoid' in method:
             method = "medoidRepresentation"
         elif 'mean' in method:
@@ -250,7 +302,6 @@ def temporal_aggregation(scenario: str,
         else:
             print('Didnt recognise choice of method, going with distribution preserving method')
             method = "distributionAndMinMaxRepresentation"
-            
 
         ### Normalise (be careful here, if you actually need absolute numbers)
         # df = df.clip(1e-3) / df.max()
@@ -296,7 +347,7 @@ def temporal_aggregation(scenario: str,
         # df['Reservoir', 'AL00_hydro0'].plot()
 
 
-        format_and_save_profiles(typPeriods, method, weather_year, (typical_periods, hours_per_period), m.input_data[scenario])
+        format_and_save_profiles(typPeriods, method, weather_year, (typical_periods, hours_per_period), model.input_data[scenario])
 
 if __name__ == '__main__':
     
@@ -304,9 +355,13 @@ if __name__ == '__main__':
     hours_per_period = 24
     method='dist'
     scenario = 'base'
+    weather_year = 2000
     balmorel_model_folder = 'Balmorel'
     include_GMAXFS = False
     gams_system_directory = '/opt/gams/48.5'
     
     temporal_aggregation(scenario, typical_periods, hours_per_period,
-                         method, balmorel_model_folder, gams_system_directory=gams_system_directory)
+                         method, weather_year, balmorel_model_folder, 
+                         gams_system_directory=gams_system_directory, 
+                         )
+# %%
