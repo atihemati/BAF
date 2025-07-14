@@ -39,9 +39,9 @@ def export_to_generative_model(scenario_folder: str,
                                     'WTRRRFLH',
                                     'WTRRSFLH',
                                ],
-                               ):
+                               **kwargs):
     
-    model = Balmorel('Balmorel')
+    model = Balmorel('Balmorel', gams_system_directory=kwargs.pop('gams_system_directory', None))
     model.load_incfiles(scenario_folder, overwrite=True)
 
     # Verify weather year
@@ -114,6 +114,7 @@ def main(scenario_folder: str):
     # Load configuration
     config = ConfigParser()
     config.read('Config.ini')
+    gams_system_directory = config.get('RunMetaData', 'gams_system_directory')
         
     weather_years = [1982, 1983, 1984, 1985, 1986, 
                     1987, 1988, 1989, 1990, 1991, 
@@ -133,7 +134,7 @@ def main(scenario_folder: str):
         os.system('pixi run preprocessing -F --rerun-incomplete')
                 
         # Get parameters
-        export_to_generative_model(scenario_folder, weather_year, 'Pre-Processing/Output/genmodel_data_WY%d.csv')
+        export_to_generative_model(scenario_folder, weather_year, 'Pre-Processing/Output/genmodel_data_WY%d.csv', gams_system_directory=gams_system_directory)
 
 
 if __name__ == '__main__':
