@@ -524,8 +524,8 @@ def generate_balmorel_hydro(ctx, weather_year: int = 2000):
         print('Generating hydro data for %s'%area)
         ### Reservoir power capacity and pumping eff in the area itself
         try:
-            turb_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[0].max() # MW
-            pump_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area, header=None)[2].max() # MW
+            turb_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area.lower(), header=None)[0].max() # MW
+            pump_cap = pd.read_table('Antares/input/hydro/common/capacity/maxpower_%s.txt'%area.lower(), header=None)[2].max() # MW
             
             res_series = pd.read_table('Antares/input/hydro/series/%s/mod.txt'%area.lower(), header=None) # MW
 
