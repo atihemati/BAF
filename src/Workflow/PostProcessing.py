@@ -8,22 +8,16 @@ Created on 29/03/2023 by
 ###        0. Script Settings       ###
 ### ------------------------------- ###
 
-print('\n|--------------------------------------------------|')   
-print('              POST-PROCESSING')
-print('|--------------------------------------------------|\n') 
-
 import pandas as pd
 import numpy as np
 import gams
 import platform
 OS = platform.platform().split('-')[0]
-import os
-if ('Workflow' in __file__) | ('Pre-Processing' in __file__):
-    os.chdir(os.path.dirname(os.path.dirname(__file__)))        
+import os 
 import pickle
 from pybalmorel.utils import symbol_to_df
-from Workflow.Functions.GeneralHelperFunctions import IncFile, AntaresOutput
-from Workflow.Functions.Methods import (
+from Functions.GeneralHelperFunctions import IncFile, AntaresOutput
+from Functions.Methods import (
     calculate_link_capacity_credits, calculate_generator_capacity_credits, 
     calculate_h2generator_capacity_credits, recalculate_resmar,
     calculate_elmarket_values, calculate_h2market_values, 
@@ -38,17 +32,18 @@ import sys
 import click
 
 
-def context():
-    if not('SC_name' in locals()):
-        try:
-            # Try to read something from the command line
-            SC_name = sys.argv[1]
-        except:
-            # Otherwise, read config from top level
-            print('Reading SC from Config.ini..') 
-            Config = configparser.ConfigParser()
-            Config.read('Config.ini')
-            SC_name = Config.get('RunMetaData', 'SC')
+def context(SC_name: str | None):
+    
+    print('\n|--------------------------------------------------|')   
+    print('              POST-PROCESSING')
+    print('|--------------------------------------------------|\n') 
+    
+    if SC_name == None:
+        # Otherwise, read config from top level
+        print('Reading SC from Config.ini..') 
+        Config = configparser.ConfigParser()
+        Config.read('Config.ini')
+        SC_name = Config.get('RunMetaData', 'SC')
      
     ### 0.0 Load configurations
     Config = configparser.ConfigParser()
@@ -63,7 +58,6 @@ def context():
 
     # Get current iteration
     i = Config.getint('RunMetaData', 'CurrentIter')
-
 
     SC = SC_name + '_Iter%d'%i 
     
@@ -553,10 +547,11 @@ def old_processing(Config: configparser.ConfigParser,
     print('|--------------------------------------------------|\n')   
 
 @click.command()
-def post_process():
-    Config, SC, SC_name, SC_folder, years, ref_year, iteration = context()
+@click.argument('scenario_name', type=str, required=False, default=None)
+def post_process(scenario_name: str | None):
+    Config, SC, scenario_name, SC_folder, years, ref_year, iteration = context(scenario_name)
     old_processing(Config, SC, SC_name, SC_folder, years, ref_year, iteration)
-
+    print(SC, scenario_name, SC_folder, years, ref_year, iteration)
 
 if __name__ == '__main__':
     post_process()
