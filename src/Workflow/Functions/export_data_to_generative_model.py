@@ -73,20 +73,20 @@ def correct_format(df: pd.DataFrame, parameter: str, weather_year: int):
         df = df.query('YYY in ["2030", "2040", "2050"]')
     
     # Add sets
-    df['WY'] = weather_year
-    df['Parameter'] = parameter + "|" + df[unique_sets].astype(str).agg("|".join, axis=1)
+    df.loc[:, ['WY']] = weather_year
+    df.loc[:, ['Parameter']] = parameter + "|" + df[unique_sets].astype(str).agg("|".join, axis=1)
     
     # Add missing temporal sets
     if not('SSS' in df.columns):
         S_values = [f'S{i:02d}' for i in range(1, 53)]
         len_before = len(df)
         df = pd.concat([df]*52, ignore_index=True)
-        df['SSS'] = np.tile(S_values, len_before)
+        df.loc[:, ['SSS']] = np.repeat(S_values, len_before)
     if not('TTT' in df.columns):
         T_values = [f'T{i:03d}' for i in range(1, 169)]
         len_before = len(df)
         df = pd.concat([df]*168, ignore_index=True)
-        df['TTT'] = np.tile(T_values, len_before)
+        df.loc[:, ['TTT']] = np.repeat(T_values, len_before)
     
     sum_before = df.Value.sum()
     df = df.pivot_table(index=['WY', 'SSS', 'TTT'], columns='Parameter', values='Value', aggfunc='sum', fill_value=0)
