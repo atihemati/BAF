@@ -15,10 +15,9 @@ Docs: https://tsam.readthedocs.io/en/latest/gettingStartedDoc.html
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from pybalmorel import Balmorel
+from pybalmorel import Balmorel, IncFile
 from pybalmorel.utils import symbol_to_df
 import os
-from Functions.GeneralHelperFunctions import doLDC, IncFile
 try:
     import tsam.timeseriesaggregation as tsam
 except ModuleNotFoundError:
@@ -320,32 +319,6 @@ def temporal_aggregation(scenario: str,
 
         typPeriods = aggregation.createTypicalPeriods()
 
-        ### 3.2 Inspect Full Profiles
-        for col in df.columns.get_level_values(0).unique():
-            agg_func = 'median'
-            fig, ax = plt.subplots()
-            ax.set_title(col)
-
-            dur, cur = doLDC(eval('df[col].%s(axis=1)'%agg_func), n_bins=1000)
-
-            ax.plot(np.cumsum(dur), cur, label='Original')
-
-            dur, cur = doLDC(eval('typPeriods[col].%s(axis=1)'%agg_func), n_bins=1000)
-            ax.plot(np.cumsum(dur)*8736/len(typPeriods), cur, label='Aggregated')
-
-            ax.legend()
-
-        # ### 3.3 A Snapshot of the full Profile compared to the aggregated one
-        # fig, ax = plt.subplots()
-        # typPeriods.loc[:, ('Load', 'DK1')].plot()
-        # fig, ax = plt.subplots()
-        # df['Load', 'DK1'].plot()
-
-        # fig, ax = plt.subplots()
-        # typPeriods.loc[:, ('Reservoir', 'AL00_hydro0')].plot()
-        # fig, ax = plt.subplots()
-        # df['Reservoir', 'AL00_hydro0'].plot()
-
 
         format_and_save_profiles(typPeriods, method, weather_year, (typical_periods, hours_per_period), model.input_data[scenario])
 
@@ -364,4 +337,4 @@ if __name__ == '__main__':
                          method, weather_year, balmorel_model_folder, 
                          gams_system_directory=gams_system_directory, 
                          )
-# %%
+    
