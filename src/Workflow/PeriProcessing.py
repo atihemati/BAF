@@ -950,21 +950,16 @@ def main(ctx, sc_name: str, year: str):
     electricity_demand = symbol_to_df(m.input_data[SC_folder], 'DE')
     electricity_profiles = symbol_to_df(m.input_data[SC_folder], 'DE_VAR_T')
 
-    ## Input data from the latest run    
-    ws = gams.GamsWorkspace(system_directory=gams_system_directory)
-    all_endofmodel_path = pathlib.Path('Balmorel/%s/model/all_endofmodel.gdx'%SC_folder)
-    ALLENDOFMODEL = ws.add_database_from_gdx(str(all_endofmodel_path.resolve()))
-    GDATA = symbol_to_df(ALLENDOFMODEL, 'GDATA', ['G', 'Par', 'Value']).groupby(by=['G', 'Par']).aggregate({'Value' : 'sum'})
-    FDATA = symbol_to_df(ALLENDOFMODEL, 'FDATA', ['F', 'Type', 'Value']).groupby(by=['F', 'Type']).aggregate({'Value' : 'sum'})
-    FPRICE = symbol_to_df(ALLENDOFMODEL, 'FUELPRICE1', ['Y', 'R', 'F', 'Value']).groupby(by=['Y', 'R', 'F']).aggregate({'Value' : 'sum'})
-    EMI_POL = symbol_to_df(ALLENDOFMODEL, 'EMI_POL', ['Y', 'C', 'Group', 'Par', 'Value']).groupby(by=['Y', 'C', 'Group', 'Par']).aggregate({'Value' : 'sum'})
-    ANNUITYCG = symbol_to_df(ALLENDOFMODEL, 'ANNUITYCG', ['C', 'G', 'Value']).groupby(by=['C', 'G']).aggregate({'Value' : 'sum'})
-    DISLOSSEL = symbol_to_df(ALLENDOFMODEL, 'DISLOSS_E', ['R', 'Value']).pivot_table(index='R', values='Value')
-    GMAXF = symbol_to_df(ALLENDOFMODEL, 'IGMAXF', ['Y', 'CRA', 'F', 'Value'])
-    GMAXFS = symbol_to_df(ALLENDOFMODEL, 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
-    CCCRRR = pd.DataFrame([rec.keys for rec in ALLENDOFMODEL['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
-    del ALLENDOFMODEL, ws # Release some memory
-
+    ## Input data from this scenario (Initialisation.py will overwrite scenario_input_data.gdx when a new master run is initiated)   
+    GDATA = symbol_to_df(m.input_data[SC_folder], 'GDATA', ['G', 'Par', 'Value']).groupby(by=['G', 'Par']).aggregate({'Value' : 'sum'})
+    FDATA = symbol_to_df(m.input_data[SC_folder], 'FDATA', ['F', 'Type', 'Value']).groupby(by=['F', 'Type']).aggregate({'Value' : 'sum'})
+    FPRICE = symbol_to_df(m.input_data[SC_folder], 'FUELPRICE1', ['Y', 'R', 'F', 'Value']).groupby(by=['Y', 'R', 'F']).aggregate({'Value' : 'sum'})
+    EMI_POL = symbol_to_df(m.input_data[SC_folder], 'EMI_POL', ['Y', 'C', 'Group', 'Par', 'Value']).groupby(by=['Y', 'C', 'Group', 'Par']).aggregate({'Value' : 'sum'})
+    ANNUITYCG = symbol_to_df(m.input_data[SC_folder], 'ANNUITYCG', ['C', 'G', 'Value']).groupby(by=['C', 'G']).aggregate({'Value' : 'sum'})
+    DISLOSSEL = symbol_to_df(m.input_data[SC_folder], 'DISLOSS_E', ['R', 'Value']).pivot_table(index='R', values='Value')
+    GMAXF = symbol_to_df(m.input_data[SC_folder], 'GMAXF', ['Y', 'CRA', 'F', 'Value'])
+    GMAXFS = symbol_to_df(m.input_data[SC_folder], 'GMAXFS', ['Y', 'CRA', 'F', 'S', 'Value'])
+    CCCRRR = pd.DataFrame([rec.keys for rec in m.input_data[SC_folder]['CCCRRR']], columns=['C', 'R']).groupby(by=['C']).aggregate({'R' : ', '.join})
 
     ## Loading MainResults
     print('Loading results for year %s from Balmorel/%s/model/MainResults_%s.gdx\n'%(year, SC_folder, SC))
@@ -1008,7 +1003,7 @@ def main(ctx, sc_name: str, year: str):
     
     # Demand response 
     create_demand_response(ctx.obj['weather_years'], res, SC, year, temporal_resolution, style)
-    create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
+    # create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   
     print('              END OF PERI-PROCESSING')
