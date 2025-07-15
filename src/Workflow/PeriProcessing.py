@@ -1002,7 +1002,7 @@ def main(ctx, sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(ctx.obj['weather_years'], res, SC, year, temporal_resolution, style)
+    create_demand_response(ctx.obj['weather_years'], res, SC, int(year), temporal_resolution, style)
     # create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   

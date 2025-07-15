@@ -413,7 +413,7 @@ def get_supply_curves(scenario: str,
             average_parameter = np.round(temp[parameter_name].mean())
             seasons = temp['Season'].to_list()
             times = temp['Time'].to_list()
-            print(f'Cluster {cluster}, Average {parameter_name} = {average_parameter}') 
+            # print(f'Cluster {cluster}, Average {parameter_name} = {average_parameter}') 
             # print(f'...for seasons {seasons} and times {times}')
             
             for area in df1_temp.query('Region == @region').Area.unique():
