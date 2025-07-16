@@ -96,6 +96,109 @@ def get_inverse_residual_load(ctx, result: MainResults, scenario: str,
     
     return inverse_residual_load
 
+@click.pass_context
+def get_exo_demand(ctx, result: MainResults, scenario: str, 
+                              model_year: int, weather_year: int, hour_index: list = None, balmorel_index: pd.MultiIndex = None,
+                              to_create_antares_input: bool = False):
+    """
+    Args:
+        ctx (_type_): _description_
+        result (MainResults): The MainResults class
+        scenario (str): The scenario
+        model_year (int): The model year
+        weather_year (int): _description_
+        hour_index (list): _description_
+        balmorel_index (pd.MultiIndex): _description_
+        to_create_antares_input (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Parameters in the format expected by get_supply_curves
+    """
+    # Get data
+    model_year = str(model_year)
+
+    # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
+    all_data = {}
+    for data in ['load', 'heat']:
+        
+        if data != 'load':
+            all_data[data] = ctx.obj[data][weather_year].copy()
+        else:
+            all_data[data] = ctx.obj[data][0].copy()
+        
+        
+        all_data[data].index = np.array(all_data[data].index) - 1 # make index start from zero
+        all_data[data].index.name = 'time_id'
+        
+        if not(to_create_antares_input):
+            all_data[data] = all_data[data].loc[hour_index]
+            all_data[data].index = balmorel_index
+    
+    # Calculate exogenous demand profiles
+    el_demand = result.get_result('EL_DEMAND_YCR').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum')
+    regions = el_demand.columns
+    all_data['load'] = all_data['load'][regions] / all_data['load'][regions].sum() *  el_demand.values * 1e6
+    
+    heat_demand = result.get_result('H_DEMAND_YCRA').query('Scenario == @scenario and Year == @model_year').query('Category == "EXOGENOUS"').pivot_table(columns=['Region'], values='Value', aggfunc='sum').reindex(columns=regions, fill_value=0)
+    all_data['heat'] = all_data['heat'][regions] / all_data['heat'][regions].sum() *  heat_demand.values * 1e6
+     
+    # Calculate total exogenous load
+    exo_demand = all_data['load'] + all_data['heat']
+    exo_demand = exo_demand.stack().reset_index().rename(columns={'country' : 'Region', 0 : 'Value'}) # format
+    
+    return exo_demand
+
+@click.pass_context
+def get_vre_availability(ctx, result: MainResults, scenario: str, 
+                              model_year: int, weather_year: int, hour_index: list = None, balmorel_index: pd.MultiIndex = None,
+                              to_create_antares_input: bool = False):
+    """
+    Args:
+        ctx (_type_): _description_
+        result (MainResults): The MainResults class
+        scenario (str): The scenario
+        model_year (int): The model year
+        weather_year (int): _description_
+        hour_index (list): _description_
+        balmorel_index (pd.MultiIndex): _description_
+        to_create_antares_input (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Parameters in the format expected by get_supply_curves
+    """
+    # Get data
+    model_year = str(model_year)
+
+    # Reduce to timeslices of Balmorel, and convert to Balmorel timeslice naming
+    all_data = {}
+    for data in ['onshore_wind', 'offshore_wind', 'solar_pv']:
+        
+        if data != 'load':
+            all_data[data] = ctx.obj[data][weather_year].copy()
+        else:
+            all_data[data] = ctx.obj[data][0].copy()
+        
+        
+        all_data[data].index = np.array(all_data[data].index) - 1 # make index start from zero
+        all_data[data].index.name = 'time_id'
+        
+        if not(to_create_antares_input):
+            all_data[data] = all_data[data].loc[hour_index]
+            all_data[data].index = balmorel_index
+            
+    # Calculate VRE profiles
+    capacities = result.get_result('G_CAP_YCRAF').query('Scenario == @scenario and Year == @model_year').query('Technology in ["WIND-ON", "WIND-OFF", "SOLAR-PV"]').pivot_table(columns=['Region'], index='Technology', values='Value', aggfunc='sum', fill_value=0)
+    regions = capacities.columns
+    all_data['onshore_wind'] = all_data['onshore_wind'][regions] * capacities.loc['WIND-ON'] * 1e3
+    all_data['offshore_wind'] = all_data['offshore_wind'][regions] * capacities.loc["WIND-OFF"] * 1e3
+    all_data['solar_pv'] = all_data['solar_pv'][regions] * capacities.loc["SOLAR-PV"] * 1e3
+    
+    # Calculate inverse residual load
+    vre_availability = all_data['onshore_wind'] + all_data['offshore_wind'] + all_data['solar_pv']
+    vre_availability = vre_availability.stack().reset_index().rename(columns={'country' : 'Region', 0 : 'Value'}) # format
+    
+    return vre_availability
+
 
 @click.pass_context
 def get_heat_demand(ctx, result: MainResults, scenario: str, 
@@ -148,15 +251,23 @@ def get_supply_curve_parameters_fit(ctx, result: MainResults, scenario: str, yea
         ValueError: If choice is not 'HEAT' or 'HYDROGEN'
 
     Returns:
-        parameters (pd.DataFrame): The parameters to fit with columns [parameter_name, 'Region', 'Season', 'Time'] 
+        parameters (tuple[pd.DataFrame]): The parameters to fit with columns [parameter_name, 'Region', 'Season', 'Time'] 
     """
     
     balmorel_weather_year = ctx.obj['balmorel_weather_year']
     
     if commodity.upper() == 'HEAT':
-        return get_heat_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        exo_demand = get_exo_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        vre_availability = get_vre_availability(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        exo_demand = exo_demand.rename(columns={'Value' : 'exo_demand'})
+        exo_demand['VRE_availability'] = vre_availability.Value
+        return exo_demand
     elif commodity.upper() == 'HYDROGEN':
-        return get_inverse_residual_load(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        exo_demand = get_exo_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        vre_availability = get_vre_availability(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
+        exo_demand = exo_demand.rename(columns={'Value' : 'exo_demand'})
+        exo_demand['VRE_availability'] = vre_availability.Value
+        return exo_demand
     else:
         raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
@@ -346,8 +457,6 @@ def get_supply_curves(scenario: str,
                       parameters: pd.DataFrame,
                       fuel_consumption: pd.DataFrame, 
                       el_prices: pd.DataFrame,
-                      cluster: bool, 
-                      cluster_size: int = 10,
                       plot_overall_curves: bool = False,
                       plot_all_curves: bool = False,
                       style: str = 'report'):
@@ -372,23 +481,17 @@ def get_supply_curves(scenario: str,
     year = str(year)
     commodity2technology = {'HEAT' : 'ELECT-TO-HEAT', 'HYDROGEN' : 'ELECTROLYZER'}
     technology = commodity2technology[commodity]
-    df1_temp = fuel_consumption.query('Year == @year and Technology == @technology')
-    df2_temp = el_prices.query('Year == @year')
+    df1_temp = fuel_consumption.query(f'Year == "{year}" and Technology == "{technology}"')
+    df2_temp = el_prices.query(f'Year == "{year}"')
     
     # Convert EPS to 0
     idx = df2_temp.query('Value < 1e-6').index
     df2_temp.loc[idx, 'Value'] = 0 
     
-    # Prepare parameters to iterate through and colors for plotting them
+    # Prepare parameters to iterate through
     regions = df1_temp.Region.unique()
-    parameter_name = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])][0]
-    
-    ## Cluster parameters 
-    if cluster:
-        parameters = parameters.groupby('Region').apply(lambda x: cluster_hours(x, cluster_size))
-    else:
-        parameters = parameters.groupby('Region').apply(lambda x: use_all_hours(x))
-    
+    parameter_names = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])]
+
     # Prepare fit result data
     resulting_curves = {region : dict() for region in regions}      
 
@@ -398,28 +501,24 @@ def get_supply_curves(scenario: str,
         
         # Get regional parameters and amount of clusters
         region_parameters = parameters.query('Region == @region')
-        clusters = region_parameters['Cluster'].unique()
         
-        print('='*20, '\n', f'Fitting supply curves for {commodity} in {region}...')
-        print('='*20)
+        print(f'Fitting supply curves for {commodity} in {region}...')
         
-        for cluster in clusters:
+        for i,row in region_parameters.iterrows():
             
             # Placeholders
             supply_curves_x, supply_curves_y = [], []
             
             # Find seasons and times of the unique parameter 
-            temp = region_parameters.query('Cluster == @cluster')[['Season', 'Time', parameter_name]]
-            average_parameter = np.round(temp[parameter_name].mean())
-            seasons = temp['Season'].to_list()
-            times = temp['Time'].to_list()
-            # print(f'Cluster {cluster}, Average {parameter_name} = {average_parameter}') 
-            # print(f'...for seasons {seasons} and times {times}')
+            temp = row[['Season', 'Time'] + parameter_names]
+            average_parameters = [np.round(temp[parameter_names[0]]), np.round(temp[parameter_names[1]])]
+            season = temp['Season']
+            time = temp['Time']
             
             for area in df1_temp.query('Region == @region').Area.unique():
                 
                 # Get technologies consuming electricity in area
-                df1=df1_temp.query('Area==@area and Fuel=="ELECTRIC" and Season in @seasons and Time in @times').pivot_table(index=['Season', 'Time'], columns='Generation', values='Value', aggfunc='sum')
+                df1=df1_temp.query(f'Area=="{area}" and Fuel=="ELECTRIC" and Season == "{season}" and Time == "{time}"').pivot_table(index=['Season', 'Time'], columns='Generation', values='Value', aggfunc='sum')
                 
                 # if len(df1.columns) > 0:
                     # print(f'Electricity consumption in {area}:\n', df1)
@@ -431,7 +530,7 @@ def get_supply_curves(scenario: str,
                         continue
                     
                     # Get electricity prices at hours
-                    df2=df2_temp.query('Scenario==@scenario and Region==@region and Season in @seasons and Time in @times').pivot_table(index=['Season', 'Time'], values='Value', aggfunc='mean')
+                    df2=df2_temp.query(f'Scenario=="{scenario}" and Region=="{region}" and Season == "{season}" and Time == "{time}"').pivot_table(index=['Season', 'Time'], values='Value', aggfunc='mean')
                     # print(f'Electricity prices:\n', df2)
 
                     # Get combined dataframe with electricity consumption (df1) and price (df2, Value)
@@ -449,13 +548,13 @@ def get_supply_curves(scenario: str,
                     if plot_all_curves:
                         fig, ax = plt.subplots()
                         temp.plot(kind='scatter', x='Value', y=tech, ax=ax, 
-                                    label=average_parameter)
+                                    label=average_parameters)
                         ax.plot(fit_x, fit_y)
                         ax.set_ylabel(f'{tech} (MWh)')
                         ax.set_xlabel('Electricity Price (€/MWh)')
                         ax.set_title(area)
                         ax.legend(loc='center left', bbox_to_anchor=(1.05, .5))
-                        fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{parameter_name}{average_parameter:0.2f}.png', bbox_inches='tight')
+                        fig.savefig(f'Workflow/OverallResults/eldempricecurve_{commodity}_{area}_{tech}_{parameter_names[0]}{average_parameters[0]:0.2f}_{parameter_names[1]}{average_parameters[1]:0.2f}.png', bbox_inches='tight')
                     
             if len(supply_curves_x) != 0:
                 # print('='*10, '\nsupply curves x:\n', supply_curves_x, '\nsupply curves y:\n', supply_curves_y)
@@ -466,11 +565,13 @@ def get_supply_curves(scenario: str,
                 
             # Plot overall curve    
             if plot_all_curves or plot_overall_curves:
-                ax_parameter.plot(combined_x, combined_y, label=average_parameter)
+                ax_parameter.plot(combined_x, combined_y, label=average_parameters)
 
             # Store seasonal curves   
-            resulting_curves[region][average_parameter] = {'price' : np.round(combined_x),
-                                                        'capacity' : np.round(combined_y)}
+            resulting_curves[region][i] = {parameter_names[0] : average_parameters[0],
+                                                 parameter_names[1] : average_parameters[1],
+                                                 'price' : np.round(combined_x),
+                                                 'capacity' : np.round(combined_y)}
 
 
         # Plot overall curve

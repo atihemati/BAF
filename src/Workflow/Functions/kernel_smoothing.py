@@ -74,12 +74,37 @@ def gaussian_kernel_smooth(x_obs, y_obs, x_new, bandwidth):
 @click.command()
 def main():
 
-    df = load_and_format_supply_curves()
+    commodity = 'HEAT'
+    region = 'DE'
+    output = 'capacity'
+
+    df = (
+        load_and_format_supply_curves()
+        .query(f'commodity == "{commodity}" and region == "{region}"')
+    )
     
-    fig, ax = plt.subplots()
-    df.query('commodity == "HYDROGEN" and region == "DE"').plot(x='parameter', y='price', kind='scatter', ax=ax)
-    df.query('commodity == "HYDROGEN" and region == "DE"').plot(x='parameter', y='capacity', kind='scatter', ax=ax, color='r')
-    ax.legend(('Price', 'Capacity'))
+    fig, ax = plt.subplots(4)
+    
+    fig.subplots_adjust(hspace=0.7)
+    df.plot(x='parameter', y=output, kind='scatter', ax=ax[0], color='r')
+    df.plot(x='parameter', y=output, kind='scatter', ax=ax[1], color='r')
+    df.plot(x='parameter', y=output, kind='scatter', ax=ax[2], color='r')
+    df.plot(x='parameter', y=output, kind='scatter', ax=ax[3], color='r')
+    
+    min_param = df.parameter.min()
+    max_param = df.parameter.max()
+    max_value = df.parameter.abs().max()
+    smooth_parameter = np.linspace(min_param-abs(max_value)*0.1,
+                                   max_param+abs(max_value)*0.1,
+                                   1000)
+    
+    for i,bandwidth in enumerate([1000, 1e4, 1e5, 1e6]):
+        smoothed = gaussian_kernel_smooth(df.parameter, getattr(df, output), smooth_parameter, bandwidth)
+
+        ax[i].plot(smooth_parameter, smoothed)
+        ax[i].set_title(f'Bandwidth: {bandwidth}')
+    
+    ax[3].legend((output, 'smoothed'))
     plt.show()
 
 if __name__ == '__main__':

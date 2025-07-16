@@ -846,14 +846,18 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         # Compute supply curves from Balmorel results
         all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity) # all, for later
         fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, cluster=True, cluster_size=10, plot_overall_curves=True, style=style)
+        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
-        for region in regions:
         
+        for region in regions:
+            pass
             # Apply supply curves to the Antares model
-            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
+            # unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
     
+    with open('supply_curves.pkl', 'wb') as f:
+        pickle.dump(supply_curves, f)
+        
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:
         unserved_energy_cost.write(f)
