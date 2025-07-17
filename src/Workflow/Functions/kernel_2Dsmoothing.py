@@ -88,19 +88,13 @@ def do_kernel_smoothing(df: pd.DataFrame,
                         plot: bool = False):
     
         
-    x_obs, x_abs_max = normalise(getattr(df, parameter_x).astype(float))
-    y_obs, y_abs_max = normalise(getattr(df, parameter_y).astype(float))
+    x_obs, x_abs_min, x_abs_max = normalise(getattr(df, parameter_x).astype(float))
+    y_obs, y_abs_min, y_abs_max = normalise(getattr(df, parameter_y).astype(float))
     z_obs = getattr(df, parameter_z).astype(float)
     
-
     # Create 2D grid for surface plot
-    min_param_x = getattr(df, parameter_x).min() / x_abs_max
-    max_param_x = getattr(df, parameter_x).max() / x_abs_max
-    x_smooth = np.linspace(min_param_x, max_param_x, 100)  # Reduced from 1000 for performance
-    
-    min_param_y = getattr(df, parameter_y).min() / y_abs_max
-    max_param_y = getattr(df, parameter_y).max() / y_abs_max
-    y_smooth = np.linspace(min_param_y, max_param_y, 100)  # Reduced from 1000 for performance
+    x_smooth = np.linspace(0, 1, 100)  # Reduced from 1000 for performance
+    y_smooth = np.linspace(0, 1, 100)  # Reduced from 1000 for performance
     
     # Create meshgrid
     X_grid, Y_grid = np.meshgrid(x_smooth, y_smooth)
@@ -115,11 +109,11 @@ def do_kernel_smoothing(df: pd.DataFrame,
         Z_grid = smoothed.reshape(X_grid.shape) # Reshape back to grid
         fig = plt.figure(figsize=plt.figaspect(0.5))
         ax = fig.add_subplot(1, 1, 1, projection='3d')
-        ax.scatter(x_obs*x_abs_max, y_obs*y_abs_max, z_obs)
+        ax.scatter(x_obs*x_abs_max + x_abs_min, y_obs*y_abs_max + y_abs_min, z_obs)
         ax.set_xlabel(parameter_x)
         ax.set_ylabel(parameter_y)
         ax.set_zlabel(parameter_z)
-        ax.plot_surface(X_grid*x_abs_max, Y_grid*y_abs_max, Z_grid, alpha=0.7, cmap='viridis')
+        ax.plot_surface(X_grid*x_abs_max + x_abs_min, Y_grid*y_abs_max + y_abs_min, Z_grid, alpha=0.7, cmap='viridis')
         ax.set_title(f'Bandwidth {parameter_x}: {bandwidth_x} Bandwidth {parameter_y}: {bandwidth_y}')
 
         if parameter_z == 'price':
@@ -129,17 +123,18 @@ def do_kernel_smoothing(df: pd.DataFrame,
         fig.subplots_adjust(hspace=0.7)
         plt.show()
     
-        return smoothed, X_flat*x_abs_max, Y_flat*y_abs_max, fig, ax
+        return smoothed, X_flat*x_abs_max + x_abs_min, Y_flat*y_abs_max + y_abs_min, fig, ax
     
     else:
-        return smoothed, X_flat*x_abs_max, Y_flat*y_abs_max
+        return smoothed, X_flat*x_abs_max + x_abs_min, Y_flat*y_abs_max + y_abs_min
 
 def normalise(series: pd.Series):
     
-    abs_max = series.abs().max()
-    series = series / abs_max
+    abs_max = series.max()
+    abs_min = series.min()
+    series = (series - abs_min) / abs_max
     
-    return series, abs_max
+    return series, abs_min, abs_max
 
 ### ------------------------------- ###
 ###            2. Main              ###
