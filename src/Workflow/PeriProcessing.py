@@ -850,24 +850,29 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         
         # Compute supply curves from Balmorel results
         all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity) # all, for later
-        fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
+        with open('supply_curves.pkl', 'rb') as f:
+            supply_curves = pickle.load(f)
+        # fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
+        # supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
         for region in regions:
 
-            df = format_supply_curve(supply_curves[commodity][region])
-            
             # Do kernel smoothing
             print(f'Kernel smoothing {parameter_x} and {parameter_y} for {commodity} in {region}')
-            do_kernel_smoothing(df, parameter_x, parameter_y, 'capacity')
-            do_kernel_smoothing(df, parameter_x, parameter_y, 'price')
-            
+            df = format_supply_curve(supply_curves[commodity][region])
+            z_capacity, x0, y0 = do_kernel_smoothing(df, parameter_x, parameter_y, 'capacity')
+            z_price, x1, y1 = do_kernel_smoothing(df, parameter_x, parameter_y, 'price')
+
+            if not(np.all(x0 == x1) and np.all(y0 == y1)):
+                raise ValueError("x and y were not similar from kernel smoothing output!")
+
+            with open(f'kernel_smoothed_{commodity}_{region}.pkl', 'wb') as f:
+                pickle.dump((x0, y0, z_capacity, z_price), f)
+
             # Create demand response
-            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
+            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, z_capacity, z_price, x0, y0, antares_input, commodity, region, unserved_energy_cost)
     
-    with open('supply_curves.pkl', 'wb') as f:
-        pickle.dump(supply_curves, f)
         
     # Store unserved
     with open('Antares/input/thermal/areas.ini', 'w') as f:

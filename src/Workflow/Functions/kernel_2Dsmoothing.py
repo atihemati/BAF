@@ -31,8 +31,8 @@ def format_supply_curve(supply_curve: dict):
     """
     
     df = pd.DataFrame(supply_curve).T
-    df.loc[:, ['price']] = df['price'].apply(max)
-    df.loc[:, ['capacity']] = df['capacity'].apply(max)
+    df.loc[:, 'price'] = df['price'].apply(max)
+    df.loc[:, 'capacity'] = df['capacity'].apply(max)
     
     return df
 
@@ -109,7 +109,7 @@ def do_kernel_smoothing(df: pd.DataFrame,
                         parameter_z: str,
                         bandwidth_x: float = 0.1, 
                         bandwidth_y: float = 0.1, 
-                        plot: bool = False):
+                        plot: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray, plt.Figure, plt.Axes]:
     
         
     x_obs, x_abs_min, x_abs_max = normalise(getattr(df, parameter_x).astype(float))
