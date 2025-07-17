@@ -664,10 +664,12 @@ def map_closest_parameters(all_parameters: pd.DataFrame,
 
 def model_supply_curves_in_antares(weather_years: list, 
                                    all_parameters: pd.DataFrame, 
+                                   parameter_x: str,
+                                   parameter_y: str,
                                    z_capacity: np.ndarray,
                                    z_price: np.ndarray,
-                                   x0: np.ndarray,
-                                   y1: np.ndarray,
+                                   x: np.ndarray,
+                                   y: np.ndarray,
                                    antares_input: AntaresInput,
                                    commodity: str,
                                    region: str,
@@ -688,55 +690,46 @@ def model_supply_curves_in_antares(weather_years: list,
         pass
     
     # Map the parameters not captured by Balmorel timeslices to the closest fitted parameter
-    fitted_parameters = supply_curves[region].keys()  
     print(f'Fitting {commodity} for region {region}')  
-    idx_mapped = map_closest_parameters(all_parameters, fitted_parameters, region)
+    temp = all_parameters.query(f'Region == "{region}"')
     
-    for parameter in fitted_parameters:
+    for i, row in temp.iterrows():
         
-        # Get the supply curve for the specific parameter
-        temp = pd.DataFrame({'price' : supply_curves[region][parameter]['price'],
-                            'capacity' : supply_curves[region][parameter]['capacity']},
-                            index=np.arange(len(supply_curves[region][parameter]['price'])))
+        # Get rounded price
+        weather_year, hour, px, py = row[['Weather Year', 'time_id', parameter_x, parameter_y]]
+        
+        if weather_year != temp.loc[i-1, 'Weather Year']:
+            print('Constructing demand response availabilities and prices for weather year', weather_year)
+        
+        # Lookup closest parameter in kernel smoothed fit
+        distances = np.sqrt((x - px)**2 + (y - py)**2)
+        closest_idx = distances.argmin()
+        price = z_price[closest_idx].round()
+        capacity = z_capacity[closest_idx].round()
         
         # Store max price if higher than overall highest price for region
-        max_price_for_parameter = round(temp['price'].max())
-        if max_price_for_parameter >= highest_price:
-            highest_price = max_price_for_parameter + 1
-
-        # Take difference between all values and sum, which will equal the availabilities at aggregated (rounded) prices
-        temp['capacity'] = temp.capacity.diff().fillna(0)
-        temp = temp.groupby(['price']).aggregate({'capacity' : 'sum'})
+        if price >= highest_price:
+            highest_price = price + 1
         
-        # Get rounded prices
-        prices = np.unique([round(price) for price in temp.index if temp.loc[price, 'capacity'] > 0])
+        # Create a cluster with the specific price
+        ## Get max capacity and initiate availability timeseries if it doesn't exist yet
+        cluster_name = f'{price:.0f}_europermwh'
+        if not(cluster_name in availability.keys()):
+            availability[cluster_name] = np.zeros((8760, len(weather_years)))
+            max_cap = capacity
+        elif availability[cluster_name].max() > capacity:
+            max_cap = availability[cluster_name].max()
+        else:
+            max_cap = capacity
         
-        # if len(prices) > 0:
-        #     print(prices)
-        
-        # Create a cluster per price 
-        for price in prices:
-            
-            # Get max capacity and initiate availability timeseries if it doesn't exist yet
-            cluster_name = f'{price:.0f}_europermwh'
-            if not(cluster_name in availability.keys()):
-                availability[cluster_name] = np.zeros((8760, len(weather_years)))
-                max_cap = temp.loc[price, 'capacity']
-            elif availability[cluster_name].max() > temp.loc[price, 'capacity']:
-                max_cap = availability[cluster_name].max()
-            else:
-                max_cap = temp.loc[price, 'capacity']
-            
-            config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
-                                                                                    True, max_cap, price)
-        
-            # Set availability of virtual cluster
-            for i, weather_year in enumerate(weather_years):
-                availability[cluster_name][idx_mapped[weather_year][parameter], i] = temp.loc[price, 'capacity']
+        config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
+                                                                                True, max_cap, price)
+    
+        ## Set availability of virtual cluster
+        availability[cluster_name][hour, weather_year-1982] = capacity
                 
-        # Set load
-        for i, weather_year in enumerate(weather_years):
-            load[idx_mapped[weather_year][parameter], i] = temp.loc[:, 'capacity'].sum()
+        ## Set load
+        load[hour, weather_year-1982] = capacity
 
     # Set load
     np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')

@@ -75,7 +75,7 @@ def format_supply_curves_full(supply_curves: dict):
 
     return df
 
-def gaussian_kernel_smooth_2d(x1_obs, x2_obs, y_obs, x1_new, x2_new, bandwidth1, bandwidth2):
+def gaussian_kernel_smooth_2d(x1_obs, x2_obs, y_obs, x1_new, x2_new, bandwidth_x, bandwidth_y):
     """
     2D Gaussian kernel smoothing
     
@@ -83,7 +83,7 @@ def gaussian_kernel_smooth_2d(x1_obs, x2_obs, y_obs, x1_new, x2_new, bandwidth1,
     - x1_obs, x2_obs: 1D arrays of observed x1 and x2 coordinates
     - y_obs: 1D array of observed y values
     - x1_new, x2_new: 1D arrays of new x1 and x2 coordinates where you want predictions
-    - bandwidth1, bandwidth2: bandwidths for x1 and x2 dimensions
+    - bandwidth_x, bandwidth_y: bandwidths for x1 and x2 dimensions
     
     Returns:
     - y_smooth: 1D array of smoothed y values at (x1_new, x2_new) points
@@ -94,8 +94,8 @@ def gaussian_kernel_smooth_2d(x1_obs, x2_obs, y_obs, x1_new, x2_new, bandwidth1,
         # Calculate 2D Gaussian weights
         weights = np.exp(
             -0.5 * (
-                ((x1_obs - x1_target) / bandwidth1)**2 + 
-                ((x2_obs - x2_target) / bandwidth2)**2
+                ((x1_obs - x1_target) / bandwidth_x)**2 + 
+                ((x2_obs - x2_target) / bandwidth_y)**2
             )
         )
         weights = weights / np.sum(weights)
@@ -111,14 +111,13 @@ def do_kernel_smoothing(df: pd.DataFrame,
                         bandwidth_y: float = 0.1, 
                         plot: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray, plt.Figure, plt.Axes]:
     
-        
     x_obs, x_abs_min, x_abs_max = normalise(getattr(df, parameter_x).astype(float))
     y_obs, y_abs_min, y_abs_max = normalise(getattr(df, parameter_y).astype(float))
     z_obs = getattr(df, parameter_z).astype(float)
     
     # Create 2D grid for surface plot
-    x_smooth = np.linspace(0, 1, 100)  # Reduced from 1000 for performance
-    y_smooth = np.linspace(0, 1, 100)  # Reduced from 1000 for performance
+    x_smooth = np.linspace(0, 1, 100)  
+    y_smooth = np.linspace(0, 1, 100)  
     
     # Create meshgrid
     X_grid, Y_grid = np.meshgrid(x_smooth, y_smooth)
