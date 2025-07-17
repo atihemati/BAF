@@ -20,7 +20,31 @@ import click
 ###          1. Functions           ###
 ### ------------------------------- ###
 
-def load_and_format_supply_curves(supply_curves: dict):
+def format_supply_curve(supply_curve: dict):
+    """Formats a supply curve for Gaussian smoothing
+
+    Args:
+        supply_curve (dict): The supply curve for a commodity and region
+
+    Returns:
+        pd.DataFrame: A dataframe that 'do_kernel_smoothing' accepts
+    """
+    
+    df = pd.DataFrame(supply_curve).T
+    df.loc[:, ['price']] = df['price'].apply(max)
+    df.loc[:, ['capacity']] = df['capacity'].apply(max)
+    
+    return df
+
+def format_supply_curves_full(supply_curves: dict):
+    """Formats all supply curves
+
+    Args:
+        supply_curves (dict): Supply curves for all commodities and regions
+
+    Returns:
+        pd.DataFrame: A dataframe that 'do_kernel_smoothing' accepts
+    """
         
     commodities = supply_curves.keys()
     
@@ -154,7 +178,7 @@ def main():
         supply_curves = pkl.load(f)
 
     df = (
-        load_and_format_supply_curves(supply_curves)
+        format_supply_curves_full(supply_curves)
         .query(f'commodity == "{commodity}" and region == "{region}"')
     )
     

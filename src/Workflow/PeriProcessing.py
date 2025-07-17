@@ -31,6 +31,7 @@ import configparser
 from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
 from Functions.build_supply_curves import get_supply_curves, get_supply_curve_parameters_fit, get_supply_curve_parameters_all, load_OSMOSE_data_to_context, model_supply_curves_in_antares
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
+from Functions.kernel_2Dsmoothing import format_supply_curve, do_kernel_smoothing
 from pybalmorel import Balmorel, MainResults
 from pybalmorel.utils import symbol_to_df
 
@@ -821,13 +822,17 @@ def create_demand_response_hourly_constraint(model: Balmorel, scenario: str,  ye
             f.write("\n".join(['0' for i in range(49)]))
     
 
-def create_demand_response(weather_years: list, result: MainResults, scenario: str, year: int, temporal_resolution: dict, style: str = 'report'):
+def create_demand_response(weather_years: list, result: MainResults, scenario: str, year: int, temporal_resolution: dict,
+                           parameter_x: str, parameter_y: str, style: str = 'report'):
     """Create demand response curves for all hours per season
 
     Args:
         result (MainResults): The MainResults class
         scenario (str): Scenario
         year (int): Model year
+        temporal_resolution (dict): The temporal resolution of Balmorel and corresponding input data time
+        parameter_x (str): The x parameter to make create supply curves from
+        parameter_y (str): The y parameter to make create supply curves from
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
 
@@ -849,11 +854,17 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
         regions = supply_curves[commodity].keys()
         
-        
         for region in regions:
-            pass
-            # Apply supply curves to the Antares model
-            # unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
+
+            df = format_supply_curve(supply_curves[commodity][region])
+            
+            # Do kernel smoothing
+            print(f'Kernel smoothing {parameter_x} and {parameter_y} for {commodity} in {region}')
+            do_kernel_smoothing(df, parameter_x, parameter_y, 'capacity')
+            do_kernel_smoothing(df, parameter_x, parameter_y, 'price')
+            
+            # Create demand response
+            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, supply_curves[commodity], antares_input, commodity, region, unserved_energy_cost)
     
     with open('supply_curves.pkl', 'wb') as f:
         pickle.dump(supply_curves, f)
@@ -895,6 +906,10 @@ def main(ctx, sc_name: str, year: str):
     Config.read(config_file_path)
     SC_folder = Config.get('RunMetaData', 'SC_Folder')
     gams_system_directory = Config.get('RunMetaData', 'gams_system_directory')
+
+    ## Kernel smoothing parameters
+    parameter_x = Config.get('PeriProcessing', 'supply_curve_parameter_x')
+    parameter_y = Config.get('PeriProcessing', 'supply_curve_parameter_y')
     
     ## Plot settings
     style = Config.get('Analysis', 'plot_style')
@@ -1006,7 +1021,8 @@ def main(ctx, sc_name: str, year: str):
                                         CCCRRR, cap)
     
     # Demand response 
-    create_demand_response(ctx.obj['weather_years'], res, SC, int(year), temporal_resolution, style)
+    create_demand_response(ctx.obj['weather_years'], res, SC, int(year), temporal_resolution,
+                           parameter_x, parameter_y, style)
     # create_demand_response_hourly_constraint(m, SC, year, gams_system_directory)
 
     print('\n|--------------------------------------------------|')   

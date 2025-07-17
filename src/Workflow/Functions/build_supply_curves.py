@@ -257,12 +257,14 @@ def get_supply_curve_parameters_fit(ctx, result: MainResults, scenario: str, yea
     balmorel_weather_year = ctx.obj['balmorel_weather_year']
     
     if commodity.upper() == 'HEAT':
+        # NOTE: SHOULD ADD SOME LINES TO MAKE THESE DEPENDENT ON THE Config/PeriProcessing/kernel_smooth_parameter_xy PARAMETERS
         exo_demand = get_exo_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
         vre_availability = get_vre_availability(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
         exo_demand = exo_demand.rename(columns={'Value' : 'exo_demand'})
         exo_demand['VRE_availability'] = vre_availability.Value
         return exo_demand
     elif commodity.upper() == 'HYDROGEN':
+        # NOTE: SHOULD ADD SOME LINES TO MAKE THESE DEPENDENT ON THE Config/PeriProcessing/kernel_smooth_parameter_xy PARAMETERS
         exo_demand = get_exo_demand(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
         vre_availability = get_vre_availability(result, scenario, year, balmorel_weather_year, temporal_resolution['hour_index'], temporal_resolution['balmorel_index'])
         exo_demand = exo_demand.rename(columns={'Value' : 'exo_demand'})
@@ -295,9 +297,17 @@ def get_supply_curve_parameters_all(ctx, result: MainResults, scenario: str, yea
     
     for weather_year in weather_years:
         if commodity.upper() == 'HEAT':
-            temp = get_heat_demand(result, scenario, year, weather_year, to_create_antares_input=True)
+            # NOTE: SHOULD ADD SOME LINES TO MAKE THESE DEPENDENT ON THE Config/PeriProcessing/kernel_smooth_parameter_xy PARAMETERS
+            temp = get_exo_demand(result, scenario, year, weather_year, to_create_antares_input=True)
+            vre_availability = get_vre_availability(result, scenario, year, weather_year, to_create_antares_input=True)
+            temp = temp.rename(columns={'Value' : 'exo_demand'})
+            temp['VRE_availability'] = vre_availability.Value
         elif commodity.upper() == 'HYDROGEN':
-            temp = get_inverse_residual_load(result, scenario, year, weather_year, to_create_antares_input=True)
+            # NOTE: SHOULD ADD SOME LINES TO MAKE THESE DEPENDENT ON THE Config/PeriProcessing/kernel_smooth_parameter_xy PARAMETERS
+            temp = get_exo_demand(result, scenario, year, weather_year, to_create_antares_input=True)
+            vre_availability = get_vre_availability(result, scenario, year, weather_year, to_create_antares_input=True)
+            temp = temp.rename(columns={'Value' : 'exo_demand'})
+            temp['VRE_availability'] = vre_availability.Value
         else:
             raise ValueError(f"Commodity '{commodity}' is not yet a part of this framework. Please choose 'HEAT' or 'HYDROGEN'")
 
