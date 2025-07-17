@@ -20,10 +20,7 @@ import click
 ###          1. Functions           ###
 ### ------------------------------- ###
 
-def load_and_format_supply_curves():
-    
-    with open('supply_curves.pkl', 'rb') as f:
-        supply_curves = pkl.load(f)
+def load_and_format_supply_curves(supply_curves: dict):
         
     commodities = supply_curves.keys()
     
@@ -82,69 +79,92 @@ def gaussian_kernel_smooth_2d(x1_obs, x2_obs, y_obs, x1_new, x2_new, bandwidth1,
     
     return y_smooth
 
-#%% ------------------------------- ###
+def do_kernel_smoothing(df: pd.DataFrame, 
+                        parameter_x: str,
+                        parameter_y: str,
+                        parameter_z: str,
+                        bandwidth_x: float = 0.1, 
+                        bandwidth_y: float = 0.1, 
+                        plot: bool = False):
+    
+        
+    x_obs, x_abs_max = normalise(getattr(df, parameter_x).astype(float))
+    y_obs, y_abs_max = normalise(getattr(df, parameter_y).astype(float))
+    z_obs = getattr(df, parameter_z).astype(float)
+    
+
+    # Create 2D grid for surface plot
+    min_param_x = getattr(df, parameter_x).min() / x_abs_max
+    max_param_x = getattr(df, parameter_x).max() / x_abs_max
+    x_smooth = np.linspace(min_param_x, max_param_x, 100)  # Reduced from 1000 for performance
+    
+    min_param_y = getattr(df, parameter_y).min() / y_abs_max
+    max_param_y = getattr(df, parameter_y).max() / y_abs_max
+    y_smooth = np.linspace(min_param_y, max_param_y, 100)  # Reduced from 1000 for performance
+    
+    # Create meshgrid
+    X_grid, Y_grid = np.meshgrid(x_smooth, y_smooth)
+    
+    # Flatten for the 2D smoothing function
+    X_flat = X_grid.flatten()
+    Y_flat = Y_grid.flatten()
+    
+    smoothed = gaussian_kernel_smooth_2d(x_obs, y_obs, z_obs, X_flat, Y_flat, bandwidth_x, bandwidth_y)
+    
+    if plot:
+        Z_grid = smoothed.reshape(X_grid.shape) # Reshape back to grid
+        fig = plt.figure(figsize=plt.figaspect(0.5))
+        ax = fig.add_subplot(1, 1, 1, projection='3d')
+        ax.scatter(x_obs*x_abs_max, y_obs*y_abs_max, z_obs)
+        ax.set_xlabel(parameter_x)
+        ax.set_ylabel(parameter_y)
+        ax.set_zlabel(parameter_z)
+        ax.plot_surface(X_grid*x_abs_max, Y_grid*y_abs_max, Z_grid, alpha=0.7, cmap='viridis')
+        ax.set_title(f'Bandwidth {parameter_x}: {bandwidth_x} Bandwidth {parameter_y}: {bandwidth_y}')
+
+        if parameter_z == 'price':
+            ax.set_zlim([0, 500])
+        
+        ax.legend((parameter_z, 'smoothed'))
+        fig.subplots_adjust(hspace=0.7)
+        plt.show()
+    
+        return smoothed, X_flat*x_abs_max, Y_flat*y_abs_max, fig, ax
+    
+    else:
+        return smoothed, X_flat*x_abs_max, Y_flat*y_abs_max
+
+def normalise(series: pd.Series):
+    
+    abs_max = series.abs().max()
+    series = series / abs_max
+    
+    return series, abs_max
+
+### ------------------------------- ###
 ###            2. Main              ###
 ### ------------------------------- ###
 
 @click.command()
 def main():
 
-    commodity = 'HEAT'
+    commodity = 'HYDROGEN'
     region = 'FR'
     output = 'capacity'
     parameter_x = 'exo_demand'
     parameter_y = 'VRE_availability'
-    bandwidths = [[5e5, 1e3], [5e5, 1e4], [1e6, 1e4]]
-    bandwidths = [[5e5, 1e4]]
+    bandwidth_x, bandwidth_y = 5e5, 1e4
+
+    with open('supply_curves.pkl', 'rb') as f:
+        supply_curves = pkl.load(f)
 
     df = (
-        load_and_format_supply_curves()
+        load_and_format_supply_curves(supply_curves)
         .query(f'commodity == "{commodity}" and region == "{region}"')
     )
     
-    fig = plt.figure(figsize=plt.figaspect(0.5))
-    ax = [fig.add_subplot(1, len(bandwidths), i+1, projection='3d') for i in range(len(bandwidths))]
+    do_kernel_smoothing(df, parameter_x, parameter_y,
+                        output, plot=True)
     
-    for i,bandwidth in enumerate(bandwidths):
-        
-        x_obs = getattr(df, parameter_x).astype(float)
-        y_obs = getattr(df, parameter_y).astype(float)
-        z_obs = getattr(df, output).astype(float)
-        
-        ax[i].scatter(x_obs, y_obs, z_obs, label=bandwidth)
-        ax[i].set_xlabel(parameter_x)
-        ax[i].set_ylabel(parameter_y)
-        ax[i].set_zlabel(output)
-    
-        # Create 2D grid for surface plot
-        min_param_x = getattr(df, parameter_x).min()
-        max_param_x = getattr(df, parameter_x).max()
-        x_smooth = np.linspace(min_param_x, max_param_x, 100)  # Reduced from 1000 for performance
-        
-        min_param_y = getattr(df, parameter_y).min()
-        max_param_y = getattr(df, parameter_y).max()
-        y_smooth = np.linspace(min_param_y, max_param_y, 100)  # Reduced from 1000 for performance
-        
-        # Create meshgrid
-        X_grid, Y_grid = np.meshgrid(x_smooth, y_smooth)
-        
-        # Flatten for the 2D smoothing function
-        X_flat = X_grid.flatten()
-        Y_flat = Y_grid.flatten()
-        
-        smoothed = gaussian_kernel_smooth_2d(x_obs, y_obs, z_obs, X_flat, Y_flat, bandwidth[0], bandwidth[1])
-        Z_grid = smoothed.reshape(X_grid.shape) # Reshape back to grid
-        
-        ax[i].plot_surface(X_grid, Y_grid, Z_grid, alpha=0.7, cmap='viridis')
-        ax[i].set_title(f'Bandwidth: {bandwidth}')
-    
-        if output == 'price':
-            ax[i].set_zlim([0, 500])
-    
-    ax[-1].legend((output, 'smoothed'))
-    fig.subplots_adjust(hspace=0.7)
-    plt.show()
-    # fig.savefig('test.png')
-
 if __name__ == '__main__':
     main()
