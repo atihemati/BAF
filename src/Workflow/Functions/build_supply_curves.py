@@ -693,19 +693,38 @@ def model_supply_curves_in_antares(weather_years: list,
     print(f'Fitting {commodity} for region {region}')  
     temp = all_parameters.query(f'Region == "{region}"')
     
-    for i, row in temp.iterrows():
+    # Compute distances etc
+    px_values = temp[parameter_x].values
+    py_values = temp[parameter_y].values
+    
+    distances = np.sqrt((x[:, np.newaxis] - px_values)**2 + 
+                    (y[:, np.newaxis] - py_values)**2)
+    closest_indices = distances.argmin(axis=0)
+    prices = z_price[closest_indices].round()
+    capacities = z_capacity[closest_indices].round()
+    
+    # Insert values 
+    temp['price'] = prices
+    temp['capacity'] = capacities
+    
+    print(distances)
+    print(prices)
+    print(capacities)
+    
+    for i, price in enumerate(temp['price'].unique()):
         
-        # Get rounded price
-        weather_year, hour, px, py = row[['Weather Year', 'time_id', parameter_x, parameter_y]]
+        # Get other variables
+        capacity = temp.pivot_table(index='time_id', columns='WeatherYear', values='capacity',fill_value=0)
+        # weather_year, hour, px, py = row[['Weather Year', 'time_id', parameter_x, parameter_y]]
         
-        if weather_year != temp.loc[i-1, 'Weather Year']:
-            print('Constructing demand response availabilities and prices for weather year', weather_year)
+        # if weather_year != temp.loc[i-1, 'Weather Year']:
+        #     print('Constructing demand response availabilities and prices for weather year', weather_year)
         
         # Lookup closest parameter in kernel smoothed fit
-        distances = np.sqrt((x - px)**2 + (y - py)**2)
-        closest_idx = distances.argmin()
-        price = z_price[closest_idx].round()
-        capacity = z_capacity[closest_idx].round()
+        # distances = np.sqrt((x - px)**2 + (y - py)**2)
+        # closest_idx = distances.argmin()
+        # price = z_price[closest_idx].round()
+        # capacity = z_capacity[closest_idx].round()
         
         # Store max price if higher than overall highest price for region
         if price >= highest_price:
@@ -716,20 +735,20 @@ def model_supply_curves_in_antares(weather_years: list,
         cluster_name = f'{price:.0f}_europermwh'
         if not(cluster_name in availability.keys()):
             availability[cluster_name] = np.zeros((8760, len(weather_years)))
-            max_cap = capacity
+            max_cap = capacity.max().max()
         elif availability[cluster_name].max() > capacity:
             max_cap = availability[cluster_name].max()
         else:
-            max_cap = capacity
+            max_cap = capacity.max().max()
         
         config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                 True, max_cap, price)
     
         ## Set availability of virtual cluster
-        availability[cluster_name][hour, weather_year-1982] = capacity
-                
+        availability[capacity.index, [[capacity.columns[wy]-1982]*len(capacity.index) for wy in range(len(capacity.columns))]] = capacity.values.T
+        
         ## Set load
-        load[hour, weather_year-1982] = capacity
+        load[capacity.index, [[capacity.columns[wy]-1982]*len(capacity.index) for wy in range(len(capacity.columns))]] = capacity.values.T
 
     # Set load
     np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')
