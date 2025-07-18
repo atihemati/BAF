@@ -762,11 +762,10 @@ def model_supply_curves_in_antares(weather_years: list,
     temp['price'] = prices
     temp['capacity'] = capacities
     
-    
     for i, price in enumerate(temp['price'].unique()):
         
-        # Get other variables
-        capacity = temp.pivot_table(index='time_id', columns='Weather Year', values='capacity',fill_value=0)
+        # Get hourly availabilities through weather years at this price
+        capacity = temp.query(f'price == {price}').pivot_table(index='time_id', columns='Weather Year', values='capacity',fill_value=0)
         
         # Store max price if higher than overall highest price for region
         if price >= highest_price:
