@@ -19,7 +19,7 @@ from sklearn.cluster import KMeans
 import os
 import configparser
 from pybalmorel import Balmorel, MainResults
-from .GeneralHelperFunctions import load_OSMOSE_data, create_transmission_input, AntaresInput, set_scenariobuilder_values
+from .GeneralHelperFunctions import load_OSMOSE_data, create_transmission_input, AntaresInput
 
 ### ------------------------------- ###
 ###           1. Functions          ###
@@ -728,12 +728,14 @@ def model_supply_curves_in_antares(weather_years: list,
                                    antares_input: AntaresInput,
                                    commodity: str,
                                    region: str,
-                                   unserved_energy_cost: configparser.ConfigParser):
+                                   real_region_unserved_energy_cost: float):
     
     # Placeholder for availability, electricity to commodity load, unserved energy cost (highest marginal price + 1 €/MWh) and the parameter for all years
     availability = {}
     load = np.zeros((8760, len(weather_years)))
     highest_price = 0
+    scenario_builder_values = []
+    unserved_energy_cost = {}
     
     # Delete all thermal clusters in virtual region
     virtual_area = f'{region}_{commodity}'.lower()
@@ -807,16 +809,15 @@ def model_supply_curves_in_antares(weather_years: list,
                    availability[cluster], delimiter='\t', fmt='%g')
     
         # Configure weather year playlist, so weather years don't mix
-        set_scenariobuilder_values(f't,{region.lower()}_{commodity.lower()},%d,{cluster.lower()}') 
+        scenario_builder_values.append(f't,{region.lower()}_{commodity.lower()},%d,{cluster.lower()}') 
         
     
     # Set unserved energy cost for virtual region
-    unserved_energy_cost.set('unserverdenergycost', virtual_area, str(highest_price))
+    unserved_energy_cost[virtual_area] = highest_price
 
     # Set unserved energy cost for related region higher if it is below the virtual cost
-    real_region_unc = unserved_energy_cost.getfloat('unserverdenergycost', region.lower())
-    if real_region_unc <= highest_price:
-        unserved_energy_cost.set('unserverdenergycost', region.lower(), str(highest_price + 10))
+    if real_region_unserved_energy_cost <= highest_price:
+        unserved_energy_cost[region] = highest_price + 10
         
     # Set hydrogen related power production cost between the two, so fuel cells don't supply heat or hydrogen
     conf = antares_input.thermal(region)
@@ -827,7 +828,7 @@ def model_supply_curves_in_antares(weather_years: list,
         with open('Antares/input/thermal/clusters/%s/list.ini'%region.lower(), 'w') as f:
             conf.write(f)
 
-    return unserved_energy_cost
+    return unserved_energy_cost, scenario_builder_values
 
 ### ------------------------------- ###
 ###            2. Main              ###

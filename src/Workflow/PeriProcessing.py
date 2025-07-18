@@ -28,7 +28,9 @@ import click
 import os
 import pickle
 import configparser
-from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
+from functools import partial
+from multiprocessing import Pool
+from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context, set_scenariobuilder_values
 from Functions.build_supply_curves import get_prices_demands, get_supply_curve_parameters_fit, get_supply_curve_parameters_all, load_OSMOSE_data_to_context, model_supply_curves_in_antares
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from Functions.kernel_2Dsmoothing import format_supply_curve, do_kernel_smoothing
@@ -853,27 +855,53 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
         prices_demands[commodity] = get_prices_demands(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices)
         
-        regions = prices_demands[commodity].keys()
         
-        for region in regions:
-            
-            # Do kernel smoothing
-            print(f'Kernel smoothing {parameter_x} and {parameter_y} for {commodity} in {region}')
-            z_capacity, x0, y0 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'capacity')
-            z_price, x1, y1 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'price')
-
-            if not(np.all(x0 == x1) and np.all(y0 == y1)):
-                raise ValueError("x and y were not similar from kernel smoothing output!")
-
-            # Create demand response
-            unserved_energy_cost = model_supply_curves_in_antares(weather_years, all_parameters, parameter_x, parameter_y, 
-                                                                  z_capacity, z_price, x0, y0, antares_input, 
-                                                                  commodity, region, unserved_energy_cost)
+        model_func = partial(model_demand_response, commodity, weather_years, 
+                             all_parameters, parameter_x, parameter_y, 
+                             prices_demands, antares_input)
+        
+        # Make fits in parallel
+        regions = list(prices_demands[commodity].keys())
+        regional_unserved_energy_costs = [unserved_energy_cost.getfloat('unserverdenergycost', region.lower()) for region in regions]
+        pool = Pool()
+        regional_unserved_energy_costs, scenario_builder_values = pool.starmap(model_func, [regions, regional_unserved_energy_costs])
     
-        
-    # Store unserved
+        # Set unserved energy cost
+        for result in range(len(regions)):
+            
+            for region in regional_unserved_energy_costs[result].keys():
+                unserved_energy_cost.set('unserverdenergycost', region, str(regional_unserved_energy_costs[region]))
+    
+            for cluster in scenario_builder_values[result]:
+                set_scenariobuilder_values(cluster)
+    
     with open('Antares/input/thermal/areas.ini', 'w') as f:
-        unserved_energy_cost.write(f)
+        unserved_energy_cost.max().write(f)
+
+def model_demand_response(commodity: str, 
+                          weather_years: list,
+                          all_parameters: pd.DataFrame, 
+                          parameter_x: str, 
+                          parameter_y: str,
+                          prices_demands: dict,
+                          antares_input: AntaresInput,
+                          region: str,
+                          unserved_energy_cost_region: float):
+    
+    # Do kernel smoothing
+    print(f'Kernel smoothing {parameter_x} and {parameter_y} for {commodity} in {region}')
+    z_capacity, x0, y0 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'capacity')
+    z_price, x1, y1 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'price')
+
+    if not(np.all(x0 == x1) and np.all(y0 == y1)):
+        raise ValueError("x and y were not similar from kernel smoothing output!")
+
+    # Create demand response
+    unserved_energy_cost, scenario_builder_values = model_supply_curves_in_antares(weather_years, all_parameters, parameter_x, parameter_y, 
+                                                            z_capacity, z_price, x0, y0, antares_input, 
+                                                            commodity, region, unserved_energy_cost_region)
+    
+    return unserved_energy_cost, scenario_builder_values
 
 #%% ------------------------------- ###
 ###         2. Main Function        ###
