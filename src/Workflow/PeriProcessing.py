@@ -29,7 +29,7 @@ import os
 import pickle
 import configparser
 from Functions.GeneralHelperFunctions import create_transmission_input, get_marginal_costs, get_efficiency, get_capex, set_cluster_attribute, AntaresInput, get_balmorel_time_and_hours, data_context
-from Functions.build_supply_curves import get_supply_curves, get_supply_curve_parameters_fit, get_supply_curve_parameters_all, load_OSMOSE_data_to_context, model_supply_curves_in_antares
+from Functions.build_supply_curves import get_prices_demands, get_supply_curve_parameters_fit, get_supply_curve_parameters_all, load_OSMOSE_data_to_context, model_supply_curves_in_antares
 from Functions.physicality_of_antares_solution import BalmorelFullTimeseries
 from Functions.kernel_2Dsmoothing import format_supply_curve, do_kernel_smoothing
 from pybalmorel import Balmorel, MainResults
@@ -836,7 +836,7 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         gams_system_directory (str, optional): Directory of GAMS binary. Defaults to None.
     """
 
-    supply_curves = {}
+    prices_demands = {}
     antares_input = AntaresInput('Antares')
     commodities = ['HEAT', 'HYDROGEN']
     
@@ -851,16 +851,16 @@ def create_demand_response(weather_years: list, result: MainResults, scenario: s
         # Compute supply curves from Balmorel results
         all_parameters = get_supply_curve_parameters_all(result, scenario, year, commodity) # all, for later
         fit_parameters = get_supply_curve_parameters_fit(result, scenario, year, commodity, temporal_resolution) # for fitting to Balmorel results
-        supply_curves[commodity] = get_supply_curves(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices, plot_overall_curves=True, style=style)
-        regions = supply_curves[commodity].keys()
+        prices_demands[commodity] = get_prices_demands(scenario, year, commodity, fit_parameters, fuel_consumption, el_prices)
+        
+        regions = prices_demands[commodity].keys()
         
         for region in regions:
             
             # Do kernel smoothing
             print(f'Kernel smoothing {parameter_x} and {parameter_y} for {commodity} in {region}')
-            df = format_supply_curve(supply_curves[commodity][region])
-            z_capacity, x0, y0 = do_kernel_smoothing(df, parameter_x, parameter_y, 'capacity')
-            z_price, x1, y1 = do_kernel_smoothing(df, parameter_x, parameter_y, 'price')
+            z_capacity, x0, y0 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'capacity')
+            z_price, x1, y1 = do_kernel_smoothing(prices_demands[commodity][region], parameter_x, parameter_y, 'price')
 
             if not(np.all(x0 == x1) and np.all(y0 == y1)):
                 raise ValueError("x and y were not similar from kernel smoothing output!")

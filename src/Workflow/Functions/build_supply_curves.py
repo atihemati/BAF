@@ -596,6 +596,61 @@ def get_supply_curves(scenario: str,
             
     return resulting_curves
 
+
+def get_prices_demands(scenario: str, 
+                      year: int, 
+                      commodity: str, 
+                      parameters: pd.DataFrame,
+                      fuel_consumption: pd.DataFrame, 
+                      el_prices: pd.DataFrame):
+    """Create seasonal curves for hydrogen and heat for every region in a scenario 
+
+    Args:
+        scenario (str): Scenario to analyse
+        year (int): The model year
+        commodity (str): The commodity
+        parameters (pd.DataFrame): The dataframe containing the parameter values for all regions, seasons and time steps with columns ['Region', 'Season', 'Time']
+        fuel_consumption (pd.DataFrame): Fuel consumption results. 
+        el_prices (pd.DataFrame): Electricity prices.
+        cluster_size (int): The amount of supply curves to build for a respective parameter (NOTE: This is problematic when you start having smaller countries in the scope! Should be made dependent on the absolute magnitude of profiles)
+
+    Returns:
+        resulting_curves (dict): Price and capacities for all region and parameters
+    """
+
+    year = str(year)
+    commodity2technology = {'HEAT' : 'ELECT-TO-HEAT', 'HYDROGEN' : 'ELECTROLYZER'}
+    technology = commodity2technology[commodity]
+    df1_temp = fuel_consumption.query(f'Year == "{year}" and Technology == "{technology}"')
+    df2_temp = el_prices.query(f'Year == "{year}"')
+    
+    # Convert EPS to 0
+    idx = df2_temp.query('Value < 1e-6').index
+    df2_temp.loc[idx, 'Value'] = 0 
+    
+    # Prepare parameters to iterate through
+    regions = df1_temp.Region.unique()
+    parameter_names = [col for col in parameters.columns if not(col in ['Region', 'Season', 'Time'])]
+
+    # Prepare fit result data
+    output = {}      
+
+    for region in regions:
+        
+        # Get regional parameters and amount of clusters
+        region_parameters = parameters.query('Region == @region')
+        
+        print(f'Getting electricity price and consumptions for {commodity} in {region}...')
+        
+        demands = df1_temp.query(f'Fuel=="ELECTRIC" and Region=="{region}"').pivot_table(index=['Season', 'Time'], values='Value', aggfunc='sum').reset_index()
+        prices = df2_temp.query(f'Scenario=="{scenario}" and Region=="{region}"').pivot_table(index=['Season', 'Time'], values='Value', aggfunc='mean').reset_index()
+        region_parameters = region_parameters.merge(demands[['Season', 'Time', 'Value']], on=['Season', 'Time']).rename(columns={'Value' : 'capacity'})
+        region_parameters = region_parameters.merge(prices[['Season', 'Time', 'Value']] , on=['Season', 'Time']).rename(columns={'Value' : 'price'})
+        
+        output[region] = region_parameters.drop(columns=['Season', 'Time'])
+            
+    return output
+
 def cluster_hours(group: pd.DataFrame, cluster_size: int):
     values = group['Value'].values.reshape(-1, 1)
     kmeans = KMeans(n_clusters=min(cluster_size, len(group)), random_state=42)  # min() handles cases with <7 samples, random state is fixed
@@ -707,24 +762,11 @@ def model_supply_curves_in_antares(weather_years: list,
     temp['price'] = prices
     temp['capacity'] = capacities
     
-    print(distances)
-    print(prices)
-    print(capacities)
     
     for i, price in enumerate(temp['price'].unique()):
         
         # Get other variables
-        capacity = temp.pivot_table(index='time_id', columns='WeatherYear', values='capacity',fill_value=0)
-        # weather_year, hour, px, py = row[['Weather Year', 'time_id', parameter_x, parameter_y]]
-        
-        # if weather_year != temp.loc[i-1, 'Weather Year']:
-        #     print('Constructing demand response availabilities and prices for weather year', weather_year)
-        
-        # Lookup closest parameter in kernel smoothed fit
-        # distances = np.sqrt((x - px)**2 + (y - py)**2)
-        # closest_idx = distances.argmin()
-        # price = z_price[closest_idx].round()
-        # capacity = z_capacity[closest_idx].round()
+        capacity = temp.pivot_table(index='time_id', columns='Weather Year', values='capacity',fill_value=0)
         
         # Store max price if higher than overall highest price for region
         if price >= highest_price:
@@ -744,11 +786,15 @@ def model_supply_curves_in_antares(weather_years: list,
         config, cluster_series_path, prepro_path = antares_input.create_thermal(virtual_area, cluster_name, 'lole', 
                                                                                 True, max_cap, price)
     
+        row_indices = capacity.index.values
+        col_indices = capacity.columns.values-1982
+        row_mesh, col_mesh = np.meshgrid(row_indices, col_indices, indexing='ij')
+        
         ## Set availability of virtual cluster
-        availability[capacity.index, [[capacity.columns[wy]-1982]*len(capacity.index) for wy in range(len(capacity.columns))]] = capacity.values.T
+        availability[cluster_name][row_mesh, col_mesh] += capacity.values
         
         ## Set load
-        load[capacity.index, [[capacity.columns[wy]-1982]*len(capacity.index) for wy in range(len(capacity.columns))]] = capacity.values.T
+        load[row_mesh, col_mesh] += capacity.values
 
     # Set load
     np.savetxt(antares_input.path_load[virtual_area], load, delimiter='\t', fmt='%g')
