@@ -42,6 +42,10 @@ def export_to_generative_model(scenario_folder: str,
     
     model = Balmorel('Balmorel', gams_system_directory=kwargs.pop('gams_system_directory', None))
     model.load_incfiles(scenario_folder, overwrite=True)
+    
+    # Geographic scope
+    IR = list(symbol_to_df(model.input_data[scenario_folder], 'IR').RRR)
+    IA = list(symbol_to_df(model.input_data[scenario_folder], 'IA').AAA)
 
     # Verify weather year
     with open(f'Balmorel/{scenario_folder}/data/DH_VAR_T.inc', 'r') as f:
@@ -55,7 +59,13 @@ def export_to_generative_model(scenario_folder: str,
 
     for parameter in parameters:
         print(parameter)
-        df = correct_format(symbol_to_df(model.input_data[scenario_folder], parameter), parameter, weather_year)
+        df = correct_format(symbol_to_df(model.input_data[scenario_folder], parameter), 
+                            parameter, 
+                            weather_year,
+                            IR,
+                            IA) 
+        
+        # Remove constant profiles
         
         if parameter == parameters[0]:
             df.T.to_csv(filename%weather_year, header=True)
@@ -63,13 +73,22 @@ def export_to_generative_model(scenario_folder: str,
             df.T.to_csv(filename%weather_year, mode='a', header=False)
     
 
-def correct_format(df: pd.DataFrame, parameter: str, weather_year: int):
+def correct_format(df: pd.DataFrame, parameter: str, weather_year: int, IR: list, IA: list):
     
     # Extract unique dimensions
     unique_sets = [col for col in df.columns if not(col in ['SSS', 'TTT', 'Value'])]
+    
     # Remove unnecessary model years
     if 'YYY' in df.columns:
         df = df.query('YYY in ["2030", "2040", "2050"]')
+    
+    # Remove regions not in geographical scope
+    if 'RRR' in df.columns:
+        df = df.query(f'RRR in {IR}')
+    
+    # Remove areas not in geographical scope
+    if 'AAA' in df.columns:
+        df = df.query(f'AAA in {IA}')
     
     # Add sets
     df.loc[:, ['WY']] = weather_year
@@ -135,6 +154,14 @@ def main(scenario_folder: str):
         # Get parameters
         export_to_generative_model(scenario_folder, weather_year, 'Pre-Processing/Output/genmodel_data_WY%d.csv', gams_system_directory=gams_system_directory)
 
+
+    # Remove profiles that are constant for all weather years, seasons and hours
+    df = pd.DataFrame()
+    for weather_year in weather_years:
+        df = pd.concat((df, pd.read_csv('Pre-Processing/Output/genmodel_data_WY%d.csv'%weather_year, index_col=0, header=[0,1,2]).T))
+
+    constant_idx = (df.iloc[0, :] == df).all()
+    df.loc[:, ~constant_idx].to_csv('Pre-Processing/Output/genmodel_input.csv')
 
 if __name__ == '__main__':
     main()
