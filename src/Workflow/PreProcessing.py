@@ -85,7 +85,7 @@ def CLI(ctx):
         data_context()
 
     ## Set weather years
-    if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series']:
+    if command in ['generate-balmorel-timeseries', 'generate-balmorel-heat-series', 'generate-balmorel-hydro-series']:
         ctx.obj['weather_years'] = [balmorel_weather_year]
     elif command in ['generate-antares-vre', 'generate-balmorel-annual-heat-adjustment']:
         ctx.obj['weather_years'] = [1982, 1983, 1984, 1985, 1986, 
@@ -353,16 +353,16 @@ def generate_balmorel_timeseries(ctx, data: str, stoch_year_data: dict):
             
     # Create .inc files for Balmorel
     f = IncFile(name=balmorel_names[data].get('incfile'),
-                prefix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0]),
-                suffix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['weather_years'][0], presuf='suf'))
+                prefix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['balmorel_weather_year']),
+                suffix=read_incfile_presuf(balmorel_names[data].get('incfile'), ctx.obj['balmorel_weather_year'], presuf='suf'))
     f.body = df
     f.save()
 
     if data != 'load':
         FLH_name = balmorel_names[data].get('incfile').replace('_VAR_T', 'FLH')
         f = IncFile(name=FLH_name,
-                    prefix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0]),
-                    suffix=read_incfile_presuf(FLH_name, ctx.obj['weather_years'][0], presuf='suf'),
+                    prefix=read_incfile_presuf(FLH_name, ctx.obj['balmorel_weather_year']),
+                    suffix=read_incfile_presuf(FLH_name, ctx.obj['balmorel_weather_year'], presuf='suf'),
                     body="\n".join(['%s%s %0.2f'%(col, balmorel_names[data]['area_suffix'], FLH[col]) for col in FLH.index]))
         f.save()
 
@@ -488,12 +488,12 @@ def get_annual_heat_demand_factor(stoch_year_data: dict, weather_year: int):
 ### ------------------------------- ###
 @CLI.command()
 @click.pass_context
-def generate_balmorel_hydro(ctx, weather_year: int = 2000):
+def generate_balmorel_hydro(ctx):
     """Generate Balmorel input data for hydropower"""
 
     # Read parameters
     ## E.g., 30 = 2012, note we start counting from 0 here, compared to in Antares UI!
-    weather_year = weather_year - 1982
+    weather_year = ctx.obj['balmorel_weather_year'] - 1982
 
     ## Balmorel timestamps
     S = ctx.obj['S']

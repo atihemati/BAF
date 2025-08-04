@@ -10,7 +10,6 @@ Created on 14.07.2025
 ###        0. Script Settings       ###
 ### ------------------------------- ###
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
