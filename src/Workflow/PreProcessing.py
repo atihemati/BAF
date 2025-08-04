@@ -10,16 +10,11 @@ Created on 09-06-2023
 import click
 import pandas as pd
 from pandas.errors import EmptyDataError
-import numpy as np
-import matplotlib.pyplot as plt
-import os
 import sys
 sys.path.append('.')
-from Functions.Formatting import newplot, nested_dict_to_df
 from Functions.GeneralHelperFunctions import load_OSMOSE_data, data_context
 from pybalmorel import IncFile
 import pickle
-from scipy.spatial import distance_matrix
 import configparser
 
 # Load geojson's
@@ -27,7 +22,7 @@ try:
     import geopandas as gpd
     p = 'Pre-Processing/Data/Balmorelgeojson'
     
-    if not('balmmap' in locals()):
+    if 'balmmap' not in locals():
         balmmap = gpd.read_file('Pre-Processing/Data/231206 AntBalmMap.geojson')
     plot_maps = True
         
@@ -44,24 +39,7 @@ def CLI(ctx):
     ### 0.0 Load configuration file
     Config = configparser.ConfigParser()
     Config.read('Config.ini')
-    UseAntaresData = Config.getboolean('PeriProcessing', 'UseAntaresData') 
     balmorel_weather_year = Config.getint('PreProcessing', 'balmorel_weather_year')
-    
-    style = 'report'
-
-    if style == 'report':
-        plt.style.use('default')
-        fc = 'white'
-    elif style == 'ppt':
-        plt.style.use('dark_background')
-        fc = 'none'
-
-    ### 0.1 Assumptions
-    balm_flh_type = 'FLH'   # Calculate FLH from XXX_VAR_T.inc or XXXFLH.inc file? Select 'VAR_T' or 'FLH'
-    normalise = True        # Normalise when calculating FLH from BALM timeseries? 
-    stoch_years = 35        # Amount of stochastic years
-    elec_loss = 0.95        # See Murcia, Juan Pablo, Matti Juhani Koivisto, Graziela Luzia, Bjarke T. Olsen, Andrea N. Hahmann, Poul Ejnar Sørensen, and Magnus Als. “Validation of European-Scale Simulated Wind Speed and Wind Generation Time Series.” Applied Energy 305 (January 1, 2022): 117794. https://doi.org/10.1016/j.apenergy.2021.117794.
-    model_year = 2050       # The model year (analysing just one year for creating weights of electricity demand for different spatial resolutions)
 
     # Set geographical scope
     ctx.ensure_object(dict)
@@ -153,7 +131,7 @@ def create_incfiles(names: list,
         for incfile in names
     }
     
-    if bodies != None:
+    if bodies is not None:
         for incfile in bodies.keys():
             incfiles[incfile].body = bodies[incfile]
             
@@ -240,11 +218,6 @@ def generate_mappings(ctx):
         
         
     ### 1.2 Other useful dictionaries
-    # Fuel
-    B2A_fuel = {'SUN' : 'solar',
-                'WIND' : 'wind',
-                'BIOGAS' : 'biogas'}
-    A2B_fuel = {B2A_fuel[k] : k for k in B2A_fuel.keys()}
 
     # Balmorel Technologies (rough combustion CO2 estimates hardcoded for now)
     kgGJ2tonMWh = 3.6 / 1e3 # Conversion from kg/GJ to ton/MWh
@@ -280,8 +253,7 @@ def generate_mappings(ctx):
                                 'NUCLEAR' : {'CO2' : 0},
                                 'STRAW' : {'CO2' : 0},
                                 'WOOD' : {'CO2' : 0},
-                                'PEAT' : {'CO2' : 0},
-                                'STRAW' : {'CO2' : 0}},
+                                'PEAT' : {'CO2' : 0}},
                 'CONDENSING-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
                 'CHP-BACK-PRESSURE-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
                 'CHP-EXTRACTION-CCS' : {'NATGAS' : {'CO2' : 56.1 * kgGJ2tonMWh * 0.1}}, 
@@ -497,7 +469,6 @@ def generate_balmorel_hydro(ctx):
 
     ## Balmorel timestamps
     S = ctx.obj['S']
-    T = ctx.obj['T']
     ST = ctx.obj['ST']
 
     # Prepare placeholders
@@ -564,7 +535,7 @@ def generate_balmorel_hydro(ctx):
             ror_cap = ror_series.max().max()
 
             # Make .inc file commands        
-            if not('%s_A'%area in hydro_AAA):
+            if '%s_A'%area not in hydro_AAA:
                 hydro_AAA += '%s_A\n'%area 
                 
             hydro_WTRRRVAR_T['%s_A'%area] = ror_series.loc[:8735, weather_year].values
@@ -610,324 +581,6 @@ def generate_balmorel_hydro(ctx):
         f.write(hydro_GKFX)
         f.write(GKFX_end)
 
-
-
-@CLI.command()
-@click.pass_context
-def old_preprocessing(ctx):
-    """The old processing scripts"""
-    # Normalise Electricity and Hydrogen Demand Profiles
-
-    ### NOTE: For new H2 regions in Antares it is assumed that, 
-    #         TR = GR
-    #          
-    balmmap['El Dem'] = 0
-    balmmap['H2 Dem'] = 0
-    for area in list(A2B_regi.keys()) + list(A2B_regi_h2):
-        # Load Antares demand
-        try:
-            ant_dem = pd.read_csv(r'C:\Users\mberos\ElementsOutside1D\BZModel\input' + '/load/series/load_%s.txt'%(area.lower()), sep='\t', header=None)
-            normed = (ant_dem / ant_dem.sum().mean()) # Normalise wrt. annual energy
-            (ant_dem / ant_dem.sum().mean()).to_csv('Antares' + '/input/load/series/load_%s_normalised-data.txt'%(area), sep='\t', header=None, index=None)    
-            # ax.plot(ant_dem[0] / ant_dem.sum().mean(), label=area)
-            
-            if 'z_h2' in area:
-                balmmap.loc[balmmap.id == A2B_regi_h2[area][0], 'H2 Dem'] += ant_dem.sum().values[0] / 1e6
-            else:
-                balmmap.loc[balmmap.id == A2B_regi[area][0], 'El Dem'] += ant_dem.sum().values[0] / 1e6
-        except (EmptyDataError, FileNotFoundError):
-            print('No load data in %s'%area)
-
-    ### Plot 
-    if plot_maps:
-        # El Demand (2040)
-        fig, ax = newplot(fc=fc, figsize=(10, 10))
-        balmmap.plot(column='El Dem', ax=ax, legend=True,
-                    legend_kwds={'label' : 'Annual El Demand (TWh)',
-                                'orientation' : 'horizontal'})
-        ax.set_xlim([-11, 30])
-        ax.set_ylim([35, 68])
-
-        # H2 Demand (2040)
-        fig, ax = newplot(fc=fc, figsize=(10, 10))
-        balmmap.plot(column='H2 Dem', ax=ax, legend=True,
-                    legend_kwds={'label' : 'Annual H2 Demand (TWh)',
-                                'orientation' : 'horizontal'})
-        ax.set_xlim([-11, 30])
-        ax.set_ylim([35, 68])
-
-    # Normalise Thermal Generation Profiles
-
-    ### NOTE: For new H2 regions in Antares it is assumed that, 
-    #         TR = GR
-    #          
-    # fig, ax = plt.subplots()
-    for area in list(A2B_regi.keys()) + list(A2B_regi_h2):
-        # Load Thermal generation profile
-        try:
-            l = os.listdir(r'C:\Users\mberos\ElementsOutside1D\BZModel\input' + '/thermal/series/%s'%area.lower())
-            outageseries = 0
-            for generator in l:
-                gen = pd.read_csv('Antares/input/thermal/series/%s/%s/series.txt'%(area, generator), sep='\t', header=None)
-                if gen[0].std() != 0:
-                    (gen / gen.max()).to_csv('Antares/input/thermal/series/%s/%s.txt'%(area, 'outageseries_' + generator), sep='\t', header=None, index=None)            
-                    # print('Outage modelled in %s for %s'%(area, generator))        
-                    outageseries += 1
-        except:
-            print('No thermal generation in %s'%area)
-        # try:
-        #     ant_dem = pd.read_csv('Antares' + '/input/load/series/load_%s.txt'%(area), sep='\t', header=None)
-        #     normed = (ant_dem / ant_dem.sum().mean()) # Normalise wrt. annual energy
-        #     (ant_dem / ant_dem.sum().mean()).to_csv('Antares' + '/input/load/series/load_%s_normalised-data.txt'%(area), sep='\t', header=None, index=None)    
-        #     # ax.plot(ant_dem[0] / ant_dem.sum().mean(), label=area)
-        # except EmptyDataError:
-        #     print('No load data in %s'%area)
-    # ax.legend()
-
-
-
-
-    #%% ------------------------------- ###
-    ###         4. A2B Weights          ###
-    ### ------------------------------- ###
-
-    ### 4.0 Weigths for assigning values from Balmorel to Antares
-    ###     NOTE: It will use the current, absolute loads in Antares/input/load to distribute weights! 
-    B2A_DH2_weights = {}
-    B2A_DE_weights = {}
-
-    ## Electricity
-    for area in B2A_regi.keys():
-        # If the spatial resolution is identical
-        if len(B2A_regi[area]) == 1:
-            B2A_DE_weights[area] = {B2A_regi[area][0] : 1}
-            
-        # If more Antares regions exist for that Balmorel region
-        else:
-            # Read data
-            loads = []
-            B2A_DE_weights[area] = {}
-            for antarea in B2A_regi[area]:
-                f = pd.read_csv('Antares/input/load/series/load_%s.txt'%antarea, sep='\t', header=None)
-                loads.append(f.sum().mean()) # Mean annual load for all stochastic years
-            
-            # Assign load
-            for n in range(len(B2A_regi[area])):
-                B2A_DE_weights[area][B2A_regi[area][n]] = loads[n] / np.sum(loads)
-                
-    ## Hydrogen
-    for area in B2A_regi_h2.keys():
-        # If the spatial resolution is identical
-        if len(B2A_regi_h2[area]) == 1:
-            B2A_DH2_weights[area] = {B2A_regi_h2[area][0] : 1}
-            
-        # If more Antares regions exist for that Balmorel region
-        else:
-            # Read data
-            loads = []
-            B2A_DH2_weights[area] = {}
-            for antarea in B2A_regi_h2[area]:
-                f = pd.read_csv('Antares/input/load/series/load_%s.txt'%antarea, sep='\t', header=None)
-                loads.append(f.sum().mean()) # Mean annual load for all stochastic years
-            
-            # Assign load
-            for n in range(len(B2A_regi_h2[area])):
-                B2A_DH2_weights[area][B2A_regi_h2[area][n]] = loads[n] / np.sum(loads)
-                
-
-    with open('Pre-Processing/Output/B2A_DE_weights.pkl', 'wb') as f:
-        pickle.dump(B2A_DE_weights, f)
-    with open('Pre-Processing/Output/B2A_DH2_weights.pkl', 'wb') as f:
-        pickle.dump(B2A_DH2_weights, f)
-
-
-    ### 4.1 Make Demand Ratios for Fictive Demand Approach
-    f = pd.read_csv('Pre-Processing/Data/BalmDE.csv', sep=';')
-    f['C'] = f.R.str[:2]
-
-    A2B_DE_weights = {}
-
-    for ant_area in A2B_regi.keys():
-        
-        A2B_DE_weights[ant_area] = {}
-        total_dem = np.sum([f.loc[(f.R == balm_area) & (f.Y == year), 'Val'].sum() for balm_area in A2B_regi[ant_area]])
-
-        for balm_area in A2B_regi[ant_area]:
-            
-            r_dem = f.loc[(f.R == balm_area) & (f.Y == year), 'Val'].sum()
-            
-            # Save share of electricity demand in dict
-            A2B_DE_weights[ant_area][balm_area] = r_dem / total_dem
-            
-            # Print the share of demand in that region
-            print(ant_area, balm_area, r_dem / total_dem*100, '%')
-
-
-    ### 4.2 Save A2B DE weight dictionary
-    with open('Pre-Processing/Output/A2B_DE_weights.pkl', 'wb') as f:
-        pickle.dump(A2B_DE_weights, f) 
-
-
-    ### 4.3 Fictive Demand from Antares to Balmorel
-    f = pd.read_csv('Pre-Processing/Data/BalmDH2.csv', sep=';')
-    f['C'] = f.R.str[:2]
-
-    A2B_DH2_weights = {}
-
-    
-
-    ### 6.3 Balmorel timestamps
-    S = ['S0%d'%i for i in range(1, 10)] + ['S%d'%i for i in range(10, 53)]
-    T = ['T00%d'%i for i in range(1, 10)] + ['T0%d'%i for i in range(10, 100)] + ['T%d'%i for i in range(100, 169)]
-    balmtime_index = ['%s . %s'%(S0, T0) for S0 in S for T0 in T]
-    WND_VAR_T = pd.DataFrame([], index=balmtime_index)
-    SOLE_VAR_T = pd.DataFrame([], index=balmtime_index)
-    DE_VAR_T = pd.DataFrame([], index='RESE . ' + pd.Series(balmtime_index))
-
-
-    ### 6.4 Automatic definition of .inc file body content
-    for BalmArea in list(B2A_regi.keys()):
-
-        for area in B2A_regi[BalmArea]:    
-            if area != 'ITCO':        
-                # if len(A2B_regi[area]) > 1:
-                #     # If Balmorel is higher resolved:
-                #     area += '_%s'%BalmArea
-
-                ## Sets
-                # ANTBALM_CCCRRRAAA, RRRAAA and AAA
-                incfiles['ANTBALM_CCCRRRAAA'].body += "%s_A\n"%area
-                incfiles['ANTBALM_RRRAAA'].body += "RRRAAA('%s', '%s_A') = YES;\n"%(BalmArea, area)
-                incfiles['ANTBALM_AAA'].body += "%s_A\n"%area
-                
-                
-                ## Moving Renewable Capacity to New Areas
-                if area not in ['FR15', 'GR15', 'ITCA', 'ITCN', 
-                                'ITCS', 'ITN1', 'ITS1', 'ITSA', 'ITSI', 'UKNI']:
-                    incfiles['ANTBALM_GKFX'].body1 += "NOTNEWAREA('%s_A') = NO;\n"%area
-                    incfiles['ANTBALM_GKFX'].body2 += "GKFX(YYY,'%s_A',GGG)$(GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_OFFSHORE OR GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_ONSHORE OR GDATA(GGG,'GDTECHGROUP') EQ SOLARPV) = SUM(AAA, GKFX(YYY,AAA,GGG)$(RRRAAA('%s',AAA) AND NOTNEWAREA(AAA) AND (GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_OFFSHORE OR GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_ONSHORE OR GDATA(GGG,'GDTECHGROUP') EQ SOLARPV)));\n"%(area, BalmArea)
-                    incfiles['ANTBALM_GKFX'].body3 += "GKFX(YYY,AAA,GGG)$(RRRAAA('%s',AAA) AND NOTNEWAREA(AAA) AND (GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_OFFSHORE OR GDATA(GGG,'GDTECHGROUP') EQ WINDTURBINE_ONSHORE OR GDATA(GGG,'GDTECHGROUP') EQ SOLARPV)) = 0;\n"%BalmArea
-                
-                ## VAR T and FLH
-                try:
-                    f = pd.read_csv('Antares/input/renewables/series/%s/%s/series.txt'%(area.replace('_%s'%BalmArea, '').lower(), area.replace('_%s'%BalmArea, '').lower() + '_wind_0'), sep='\t', header=None)            
-                    WND_VAR_T[area + '_A'] = f.loc[:8735, balm_year].values / elec_loss # Electricity loss accounted for in Balmorel
-                    incfiles['ANTBALM_WNDFLH'].body += "%s_A \t\t\t %0.2f\n"%(area, WND_VAR_T[area + '_A'].sum())
-                except EmptyDataError:
-                    print('No solar data in %s'%(area))    
-                    
-                try:
-                    f = pd.read_csv('Antares/input/renewables/series/%s/%s/series.txt'%(area.replace('_%s'%BalmArea, '').lower(), area.replace('_%s'%BalmArea, '').lower() + '_solar_0'), sep='\t', header=None)            
-                    SOLE_VAR_T[area + '_A'] = f.loc[:8735, balm_year].values / elec_loss # Electricity loss accounted for in Balmorel
-                    incfiles['ANTBALM_SOLEFLH'].body += "%s_A \t\t\t %0.2f\n"%(area, SOLE_VAR_T[area + '_A'].sum())
-                except EmptyDataError:
-                    print('No wind data in %s'%(area))    
-                    
-                ## DE_VAR_T
-                f = pd.read_csv('Antares/input/load/series/load_%s_normalised-data.txt'%(area), sep='\t', header=None)            
-                DE_VAR_T[BalmArea] = f.loc[:8735, balm_year].values        
-                    
-                ## AGKN, Investment options (Look at prefix for ANTBALM_AGKN, other investment options have been taken care of)
-                for year0 in ['2020', '2030', '2040', '2050']:
-                    incfiles['ANTBALM_AGKN'].body += "AGKN('%s_A','GNR_WT_ONS-%s') = YES;\n"%(area, year0)
-                    incfiles['ANTBALM_AGKN'].body += "AGKN('%s_A','GNR_WT_OFF-%s') = YES;\n"%(area, year0)
-                    
-                    if area != 'NON1_A':
-                        incfiles['ANTBALM_AGKN'].body += "AGKN('%s_A','GNR_PV-%s') = YES;\n"%(area, year0) 
-
-    ### 6.5 The finishing lines and saving .inc files in Balmorel/base/data
-    incfiles['ANTBALM_CCCRRRAAA'].suffix = "/;\n$label USEANTARESDATAEND"
-    incfiles['ANTBALM_CCCRRR'].suffix = "$label USEANTARESDATAEND"
-    incfiles['ANTBALM_RRR'].suffix = "$label USEANTARESDATAEND"
-    incfiles['ANTBALM_AAA'].suffix = "/;\n$label USEANTARESDATAEND"
-    incfiles['ANTBALM_WNDFLH'].suffix = "/;\n$label USEANTARESDATAEND"
-    incfiles['ANTBALM_SOLEFLH'].suffix = "/;\n$label USEANTARESDATAEND"
-    incfiles['ANTBALM_WND_VAR_T'].body = WND_VAR_T.to_string()
-    incfiles['ANTBALM_WND_VAR_T'].suffix = '\n;\nWND_VAR_T(IA,SSS,TTT)$WND_VAR_T2(SSS,TTT,IA) = WND_VAR_T2(SSS,TTT,IA);\nWND_VAR_T2(SSS,TTT,AAA)=0;\n$label USEANTARESDATAEND'
-    incfiles['ANTBALM_SOLE_VAR_T'].body = SOLE_VAR_T.to_string()
-    incfiles['ANTBALM_SOLE_VAR_T'].suffix = '\n;\nSOLE_VAR_T(IA,SSS,TTT)$SOLE_VAR_T2(SSS,TTT,IA) = SOLE_VAR_T2(SSS,TTT,IA);\nSOLE_VAR_T2(SSS,TTT,AAA)=0;\n$label USEANTARESDATAEND'
-    incfiles['ANTBALM_AGKN'].suffix = "$label USEANTARESDATAEND"
-    incfiles['ANTBALM_GKFX'].body = incfiles['ANTBALM_GKFX'].body1 + incfiles['ANTBALM_GKFX'].body2 + incfiles['ANTBALM_GKFX'].body3
-    incfiles['ANTBALM_GKFX'].suffix = "$label USEANTARESDATAEND"
-    incfiles['ANTBALM_RRRAAA'].suffix = "$label USEANTARESDATAEND"
-    incfiles['ANTBALM_DE_VAR_T'].body = DE_VAR_T.to_string()
-    incfiles['ANTBALM_DE_VAR_T'].suffix = """\n;\nDE_VAR_T(RRR,'RESE',SSS,TTT) =  ANTBALM_DE_VAR_T('RESE',SSS,TTT,RRR);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-    DE_VAR_T(RRR,'OTHER',SSS,TTT) =  ANTBALM_DE_VAR_T('RESE',SSS,TTT,RRR);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
-    DE_VAR_T(RRR,'DATACENTER',SSS,TTT)$SUM(YYY,DE(YYY,RRR,'DATACENTER'))  =  ANTBALM_DE_VAR_T('RESE',SSS,TTT,RRR);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
-    DE_VAR_T(RRR,'PII',SSS,TTT) = ANTBALM_DE_VAR_T('RESE',SSS,TTT,RRR);
-    ANTBALM_DE_VAR_T(DEUSER,SSS,TTT,RRR)=0;\n$label USEANTARESDATAEND"""
-
-    ## Save
-    for key in incfiles.keys():
-        incfiles[key].save()
-
-    #%% ------------------------------- ###
-    ###           Transmission          ###
-    ### ------------------------------- ###
-
-    # This analysis requires geopandas
-    if plot_maps:
-        
-        # From DEA 2021, 111 'Main electricity distribution grid' (no data for transmission? these costs are for 50/60 kV)
-        XE_cost = 3100 # €/MW/km high bound
-        
-        # From Kountouris, Ioannis. “A Unified European Hydrogen Infrastructure Planning to Support the Rapid Scale-up of Hydrogen Production,” August 1, 2023. https://doi.org/10.21203/rs.3.rs-3185467/v1.
-        TransInvCost = {2030 : {'H2' : {'Onshore' : {'New' : 536.17,
-                                                    'Rep' : 150},
-                                        'Offshore': {'New' : 902.13,
-                                                    'Rep' : 175}},
-                                'El' : {'Onshore' : {'New' : XE_cost},
-                                        'Offshore': {'New' : XE_cost}}}, 
-                        2040 : {'H2' : {'Onshore' : {'New' : 263.08,
-                                                    'Rep' : 86.15},
-                                        'Offshore': {'New' : 450.77,
-                                                    'Rep' : 120}},
-                                'El': {'Onshore' : {'New' : XE_cost},
-                                    'Offshore': {'New' : XE_cost}}}}
-        TransInvCost = nested_dict_to_df(TransInvCost) # €/MW/km
-
-        # Plot Settings
-        scale = 0.75
-        fig, ax = plt.subplots(dpi=75/scale, figsize=(20*scale,15*scale))
-        balmmap.plot(ax=ax, facecolor=[.85, .85, .85])
-
-        ### 7.1 Electricity Grid
-        el_grid = gpd.read_file('Pre-Processing/Data/Infrastructure/EUPowerGrid.geojson')
-        
-        # Fix unknown voltages
-        el_grid.loc[el_grid['voltage'] == '', 'voltage'] = 'unknown'
-        # el_grid.voltage.astype('category')
-        
-        el_grid.plot(column='voltage', legend=True, ax=ax, linewidth=.5)
-        # p1 = ax.get_legend().get_patches()
-        
-        ### 7.2 Gas Grid
-        gas_grid = gpd.read_file('Pre-Processing/Data/Infrastructure/IGGIN_PipeSegments.geojson')
-        gas_grid.plot(ax=ax, linewidth=.5, color='orange', label='Gas Grid')
-
-
-        ax.set_xlim([-11, 35])
-        ax.set_ylim([35, 68])
-        # ax.legend(('132', '220', '300', '380', '500', '750', 'Unknown'))
-
-
-        ### 7.3 Calculate Distances    
-        balmmap_meters = balmmap.to_crs(4328)
-
-        D = pd.DataFrame(
-            distance_matrix(balmmap_meters.geometry.apply(lambda polygon: (polygon.centroid.x, polygon.centroid.y)).tolist(),
-                            balmmap_meters.geometry.apply(lambda polygon: (polygon.centroid.x, polygon.centroid.y)).tolist()),
-            index=balmmap_meters.id,
-            columns=balmmap_meters.id
-        ) / 1000 # in km
-
-        # Links
-        links = pd.read_csv('Pre-Processing/Data/Links.csv', sep=';')
-
-
-        # Get distance matrix
-        D = distance_matrix(x=balmmap.geometry.centroid.x,
-                            y=balmmap.geometry.centroid.y)
 
 ### Main
 if __name__ == '__main__':
