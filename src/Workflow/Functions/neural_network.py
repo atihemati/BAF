@@ -482,13 +482,16 @@ class ScenarioGenerator(nn.Module):
         
 def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
                         scenario: str,
+                        scenario_folder: str,
                         balmorel_model_path: str = 'Balmorel',
                         gams_system_directory: str | None = None):
     
     
     # Get parameters and temporal resolution
     parameters = new_scenarios_df.columns[2:] # pop scenario id and time_step
-    balmorel_time_index = [f"S{row['scenario_id']:02d} . T{row['time_step']:03d}" for i,row  in new_scenarios_df.loc[:, ['scenario_id', 'time_step']].iterrows()]
+    balmorel_season_time_index = [f"S{row['scenario_id']:02d} . T{row['time_step']:03d}" for i,row  in new_scenarios_df.loc[:, ['scenario_id', 'time_step']].iterrows()]
+    balmorel_season_index = [f"S{season:02d}" for season in new_scenarios_df.loc[:, 'scenario_id'].values]
+    balmorel_term_index = [f"T{term:03d}" for term in new_scenarios_df.loc[:, 'time_step'].values]
     
     # Load Balmorel input data for descriptions and set names
     model = Balmorel(balmorel_model_path, gams_system_directory=gams_system_directory)
@@ -508,20 +511,71 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
             placeholder_parameter = parameter_name
         
         # Find all values of this parameter
-        idx=new_scenarios_df.columns.str.find(parameter_name) == 0
+        idx=new_scenarios_df.columns.str.find(parameter_name + '|') == 0
         
         # Get sets, values and explanation
         sets = model.input_data[scenario][parameter_name].domains_as_strings
-        table_or_param = 'PARAMETER' if len(sets) == 1 else 'TABLE'
         text = model.input_data[scenario][parameter_name].text
-        df = new_scenarios_df.loc[:, idx]
-        df.index = balmorel_time_index   
-        df.columns = df.columns.str.replace(parameter_name+'|', '').str.replace('|', ' . ')
+        table_or_param = 'PARAMETER' if (len(sets) == 1) else 'TABLE'
+        if table_or_param == 'PARAMETER':
+            prefix = f"""{table_or_param} {parameter_name}({','.join(sets)}) "{text}" \n/\n"""
+            suffix = '\n/;'
+        else:
+            prefix = f"""{table_or_param} {parameter_name}({','.join(sets)}) "{text}" \n"""
+            suffix = '\n;'
         
+        df = new_scenarios_df.loc[:, idx]
+        df.columns = df.columns.str.replace(parameter_name+'|', '').str.replace('|', ' . ')
+
+        if 'SSS' in sets and 'TTT' in sets:
+            df.index = balmorel_season_time_index   
+            df.index.name = 'ST'
+            df = df.pivot_table(index='ST', aggfunc='mean')
+            df.index.name = ''
+            df = df.T
+            
+        elif 'SSS' in sets:
+            df.index = balmorel_season_index
+            df.index.name = 'S'
+            df = df.pivot_table(index='S', aggfunc='mean')
+            df.index.name = ''
+            df = df.T
+            
+        else:
+            df = df.mean().T
+            if table_or_param != 'PARAMETER':
+                prefix = prefix.replace('TABLE', 'PARAMETER')
+                prefix += "/\n"
+                suffix = "\n/;"
+                
         IncFile(
             name=parameter_name,
-            prefix=f"""{table_or_param} {parameter_name}({','.join(sets)}) "{text}" \n""",
-            body=df,
-            suffix='\n;',
-            path=balmorel_model_path + '/operun/data'
+            prefix=prefix,
+            body=df.to_string(),
+            suffix=suffix,
+            path=balmorel_model_path + f'/{scenario_folder}/data'
         ).save()
+        
+    # Define temporal resolution
+    IncFile(
+        name='S',
+        prefix="SET S(SSS)  'Seasons in the simulation'\n/\n",
+        body=', '.join(np.unique(balmorel_season_index)),
+        suffix='\n/;',
+        path=balmorel_model_path + f'/{scenario_folder}/data'
+    ).save()
+    IncFile(
+        name='T',
+        prefix="SET T(TTT)  'Time periods within a season in the simulation'\n/\n",
+        body=','.join(np.unique(balmorel_term_index)),
+        suffix='\n/;',
+        path=balmorel_model_path + f'/{scenario_folder}/data'
+    ).save()
+        
+        
+if __name__ == '__main__':
+    model = ScenarioGenerator()
+    model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv')
+    model.load_model('Pre-Processing/Output/small-system-input.pth')
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1)
+    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
