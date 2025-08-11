@@ -123,7 +123,7 @@ XINVESTSTART= 2035;
 *overall control variable HEATTRANS must be 'yes' if any of the other heat trans controls are.
 
 * Permit heat transmission between areas.
-$setglobal HEATTRANS 
+$setglobal HEATTRANS yes
 *!option yes
 
 * Permit heat transmission investments between areas.
@@ -692,7 +692,7 @@ $setglobal ADDENERGYDISPATCH
 
 * ------------------HYDRO---------------------------------
 * For this model run it is possible to use values found from previuos solutions to specify use of hydro power
-$setglobal HYRSBB123 none
+$setglobal HYRSBB123 cont
 *!option quant         !Text "Use seasonal quantities of hydro generation (from HYRSG.gdx??) in this run ('primal decomposition')(not implemented in BB4)"
 *!option price         !Text "Use seasonal prices for hydro generation (from WATERVAL.gdx) in this run ('dual decomposition')"
 *!option quantprice    !Text "Use seasonal quantities and prices for hydro generation (from HYRSG.gdx?? and WATERVAL.gdx) in in this run (not implemented in BB4)"

@@ -123,7 +123,7 @@ XINVESTSTART= 2035;
 *overall control variable HEATTRANS must be 'yes' if any of the other heat trans controls are.
 
 * Permit heat transmission between areas.
-$setglobal HEATTRANS 
+$setglobal HEATTRANS yes
 *!option yes
 
 * Permit heat transmission investments between areas.

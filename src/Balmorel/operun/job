@@ -29,33 +29,39 @@
 # here follow the commands you want to execute with input.in as the input file
 
 ### Path to GAMS binary
-export PATH=/appl/gams/47.6.0:$PATH
-
-### Activate spatialstudy environment
-source ~/miniconda3/bin/activate spatialstudy
+export PATH=/opt/gams/48.5:$PATH
 
 
-for name in N2 N10 N30 N50 N70 base; do
-    for runtype in dispatch operun; do
+for name in test; do
+    for runtype in capacity dispatch operun; do
 
         # Copy most results from disaggregated run to simex
-        if [ $runtype = "dispatch" ]; then
-            cp -f ./simex_${name}_ZCEHX/*.gdx ./simex
-        fi
+        # if [ $runtype = "dispatch" ]; then
+        #     cp -f ./simex_${name}_ZCEHX/*.gdx ./simex
+        # fi
 
         # Seasonal heuristic for synfuel demand
         # python analysis/peri-process.py ${name}_ZCEHX seasonal-synfuel 
         
         # Remove previous data and copy new
-        rm DA_operun/data/*.inc 
-        cp -f ${name}/data/*.inc DA_operun/data/
+        # rm operun/data/*.inc 
+        # cp -f ${name}/data/*.inc operun/data/
 
         # Copy S and T
-        cp -f DA_operun/S.inc DA_operun/data/
-        cp -f "DA_operun/T_${runtype}.inc" "DA_operun/data/T.inc"
+        rm operun/data/*.inc
+        if [ $runtype = "capacity" ]; then
+            cp -f operun/capexp_data/*.inc operun/data
+        else
+            # If not capacity, then use base/data !
+            
+            cp -f operun/S.inc operun/data/
+            cp -f "operun/T_${runtype}.inc" "operun/data/T.inc"
 
-        # Choose balopt
-        mv "DA_operun/model/balopt_${runtype}.opt" "DA_operun/model/balopt.opt"
+            # Choose balopt
+            mv "operun/model/balopt_${runtype}.opt" "operun/model/balopt.opt"
+        fi
+
+
 
         # # Disaggregate capacities
         # if [ $name != "base" ]; then
@@ -65,12 +71,12 @@ for name in N2 N10 N30 N50 N70 base; do
         # fi
 
         # Running Balmorel 
-        cd DA_operun/model 
-        gams Balmorel --scenario_name "${name}_ZCEHX_${runtype}"
+        cd operun/model 
+        gams Balmorel --scenario_name "${name}_${runtype}"
 
         # Exit, if there are errors
         if [ $? -ne 0 ]; then
-            echo "GAMS execution failed for scenario ${name}_ZCEHX_${runtype}"
+            echo "GAMS execution failed for scenario ${name}_${runtype}"
             exit 1
         fi
         
@@ -79,12 +85,14 @@ for name in N2 N10 N30 N50 N70 base; do
         # Copy the simex folder
         # cp simex -r simex_$name
 
-        # Choose balopt
-        mv "DA_operun/model/balopt.opt" "DA_operun/model/balopt_${runtype}.opt"
+        if [ $runtype != "capacity" ]; then
+            # Rename balopt back
+            mv "operun/model/balopt.opt" "operun/model/balopt_${runtype}.opt"
+        fi
 
         # Analyse adequacy
-        # analyse adequacy ${name}_ZCEHX_operun --nth-max 3
+        # analyse adequacy ${name}_operun --nth-max 3
     done
     
-    analyse adequacy ${name}_ZCEHX_operun
+    analyse adequacy ${name}_operun
 done
