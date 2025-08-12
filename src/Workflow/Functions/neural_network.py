@@ -415,7 +415,10 @@ class ScenarioGenerator(nn.Module):
             'new_scenarios_list': self.new_scenarios_list,  # Generated scenarios
             'X_original': self.X_original,  # Original X tensor
             'cond_tensor': self.cond_tensor,  # Condition tensor
-            'X_tensor': self.X_tensor,  # Original X tensor
+            'X_tensor': self.X_tensor,  # Original X tensor,
+            'reconstruction_loss_total' : self.reconstruction_loss_total,
+            'empty_df' : self.empty_df,
+            'scaler' : self.scaler,
         }, file_path)
         
         print("-------------------------------------------------------------------------------------------------------------------------")
@@ -444,6 +447,9 @@ class ScenarioGenerator(nn.Module):
         self.X_original = checkpoint['X_original']
         self.cond_tensor = checkpoint['cond_tensor']
         self.X_tensor = checkpoint['X_tensor']
+        self.reconstruction_loss_total = checkpoint['reconstruction_loss_total']
+        self.empty_df = checkpoint['empty_df']
+        self.scaler = checkpoint['scaler']
         
         print(f'Model and additional attributes loaded from {file_path}')
         
@@ -574,31 +580,47 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
         path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
         
-@click.command()
+@click.group()
+def CLI():
+    pass
+
+@CLI.command()
 @click.argument('scenario', type=str, required=True)
-@click.argument('epoch', type=int, required=True)
-def main(scenario: str, epoch: int):
+@click.argument('epochs', type=int, required=True)
+def pretrain(scenario: str, epochs: int):
     model = ScenarioGenerator()
     model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv')
-    model.load_model('Pre-Processing/Output/small-system-input_onlydispatchfullyear.pth')
+    model.pretrain(epochs=epochs, batch_size=32)
+    
+    # create new incfiles
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1)
+    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/appl/gams/47.6.0')
+
+    model.save_model(f'Pre-Processing/Output/{scenario}_model.pth')
+
+@CLI.command()
+@click.argument('scenario', type=str, required=True)
+@click.argument('epoch', type=int, required=True)
+def train(scenario: str, epoch: int):
+    model = ScenarioGenerator()
+    model.load_model(f'Pre-Processing/Output/{scenario}_model.pth')
     
     # Get the objective value
-    df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_adeq.csv'))
+    df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + f'_E{epoch}_adeq.csv'))
     # df2 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_backcapN3.csv'))
     # print(df2)
     
-    obj_value = -np.sum(df1[['ENS_TWh', 'LOLE_h']].values)
+    obj_value = np.sum(df1[['ENS_TWh', 'LOLE_h']].values)
 
     # update the model with the objective value
-    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1) # i had to do this to make it work
     model.update(obj_value, epoch=epoch)
     
     # create new incfiles
     new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1)
-    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
+    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/appl/gams/47.6.0')
     
     # save model
-    model.save_model('Pre-Processing/Output/small-system-input_onlydispatchfullyear.pth')
+    model.save_model(f'Pre-Processing/Output/{scenario}_model.pth')
         
 if __name__ == '__main__':
-    main()
+    CLI()
