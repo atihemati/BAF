@@ -7,8 +7,10 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-import random  
 from pybalmorel import IncFile, Balmorel
+import click
+import random  
+import os
 
 # ignore warnings 
 import warnings
@@ -553,7 +555,7 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
             prefix=prefix,
             body=df.to_string(),
             suffix=suffix,
-            path=balmorel_model_path + f'/{scenario_folder}/data'
+            path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
         ).save()
         
     # Define temporal resolution
@@ -562,20 +564,41 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
         prefix="SET S(SSS)  'Seasons in the simulation'\n/\n",
         body=', '.join(np.unique(balmorel_season_index)),
         suffix='\n/;',
-        path=balmorel_model_path + f'/{scenario_folder}/data'
+        path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
     IncFile(
         name='T',
         prefix="SET T(TTT)  'Time periods within a season in the simulation'\n/\n",
         body=','.join(np.unique(balmorel_term_index)),
         suffix='\n/;',
-        path=balmorel_model_path + f'/{scenario_folder}/data'
+        path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
         
-        
-if __name__ == '__main__':
+@click.command()
+@click.argument('scenario', type=str, required=True)
+@click.argument('epoch', type=int, required=True)
+def main(scenario: str, epoch: int):
     model = ScenarioGenerator()
     model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv')
-    model.load_model('Pre-Processing/Output/small-system-input.pth')
+    model.load_model('Pre-Processing/Output/small-system-input_onlydispatchfullyear.pth')
+    
+    # Get the objective value
+    df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_adeq.csv'))
+    # df2 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_backcapN3.csv'))
+    # print(df2)
+    
+    obj_value = -np.sum(df1[['ENS_TWh', 'LOLE_h']].values)
+
+    # update the model with the objective value
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1) # i had to do this to make it work
+    model.update(obj_value, epoch=epoch)
+    
+    # create new incfiles
     new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=32, n_scenarios=1)
     convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
+    
+    # save model
+    model.save_model('Pre-Processing/Output/small-system-input_onlydispatchfullyear.pth')
+        
+if __name__ == '__main__':
+    main()
