@@ -758,7 +758,7 @@ def bar_chart(ctx, scenarios: str, symbol: str,
     
     ax.legend(bbox_to_anchor=(1.01, .5), loc='center left')
     
-    fig.savefig('analysis/plots/bar_chart_output.png', bbox_inches='tight')
+    fig.savefig('analysis/output/bar_chart_output.png', bbox_inches='tight')
     
 
 #%% ------------------------------- ###
