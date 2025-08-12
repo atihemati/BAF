@@ -32,67 +32,75 @@
 export PATH=/opt/gams/48.5:$PATH
 
 
-for name in test; do
-    for runtype in capacity dispatch operun; do
+epoch=2
 
-        # Copy most results from disaggregated run to simex
-        # if [ $runtype = "dispatch" ]; then
-        #     cp -f ./simex_${name}_ZCEHX/*.gdx ./simex
-        # fi
+while [ $epoch -le 3000 ]
+do
+    for name in test; do
+        for runtype in capacity dispatch operun; do
 
-        # Seasonal heuristic for synfuel demand
-        # python analysis/peri-process.py ${name}_ZCEHX seasonal-synfuel 
-        
-        # Remove previous data and copy new
-        # rm operun/data/*.inc 
-        # cp -f ${name}/data/*.inc operun/data/
+            # Copy most results from disaggregated run to simex
+            # if [ $runtype = "dispatch" ]; then
+            #     cp -f ./simex_${name}_ZCEHX/*.gdx ./simex
+            # fi
 
-        # Copy S and T
-        rm operun/data/*.inc
-        if [ $runtype = "capacity" ]; then
-            cp -f operun/capexp_data/*.inc operun/data
-        else
-            # If not capacity, then use base/data !
+            # Seasonal heuristic for synfuel demand
+            # python analysis/peri-process.py ${name}_ZCEHX seasonal-synfuel 
             
-            cp -f operun/S.inc operun/data/
-            cp -f "operun/T_${runtype}.inc" "operun/data/T.inc"
+            # Remove previous data and copy new
+            # rm operun/data/*.inc 
+            # cp -f ${name}/data/*.inc operun/data/
 
-            # Choose balopt
-            mv "operun/model/balopt_${runtype}.opt" "operun/model/balopt.opt"
-        fi
+            # Copy S and T
+            rm operun/data/*.inc
+            if [ $runtype = "capacity" ]; then
+                cp -f operun/capexp_data/*.inc operun/data
+            else
+                # If not capacity, then use base/data !
+                
+                cp -f operun/S.inc operun/data/
+                cp -f "operun/T_${runtype}.inc" "operun/data/T.inc"
 
+                # Choose balopt
+                mv "operun/model/balopt_${runtype}.opt" "operun/model/balopt.opt"
+            fi
 
+            # # Disaggregate capacities
+            # if [ $name != "base" ]; then
+            #     python simex/oper-input.py disagg $name base
+            # else
+            #     echo "Skipping disaggregation due to running ${name} scenario"
+            # fi
 
-        # # Disaggregate capacities
-        # if [ $name != "base" ]; then
-        #     python simex/oper-input.py disagg $name base
-        # else
-        #     echo "Skipping disaggregation due to running ${name} scenario"
-        # fi
+            # Running Balmorel 
+            cd operun/model 
+            gams Balmorel --scenario_name "${name}E${epoch}_${runtype}"
 
-        # Running Balmorel 
-        cd operun/model 
-        gams Balmorel --scenario_name "${name}_${runtype}"
+            # Exit, if there are errors
+            if [ $? -ne 0 ]; then
+                echo "GAMS execution failed for scenario ${name}E${epoch}_${runtype}"
+                exit 1
+            fi
+            
+            cd ../../
 
-        # Exit, if there are errors
-        if [ $? -ne 0 ]; then
-            echo "GAMS execution failed for scenario ${name}_${runtype}"
-            exit 1
-        fi
+            # Copy the simex folder
+            # cp simex -r simex_$name
+
+            if [ $runtype != "capacity" ]; then
+                # Rename balopt back
+                mv "operun/model/balopt.opt" "operun/model/balopt_${runtype}.opt"
+            fi
+
+            # Analyse adequacy
+            # analyse adequacy ${name}_operun --nth-max 3
+        done
         
-        cd ../../
-
-        # Copy the simex folder
-        # cp simex -r simex_$name
-
-        if [ $runtype != "capacity" ]; then
-            # Rename balopt back
-            mv "operun/model/balopt.opt" "operun/model/balopt_${runtype}.opt"
-        fi
-
-        # Analyse adequacy
-        # analyse adequacy ${name}_operun --nth-max 3
+        python analysis/analyse.py adequacy "${name}E${epoch}_operun"
     done
-    
-    analyse adequacy ${name}_operun
+
+  cd ../
+  python Workflow/Functions/neural_network.py "${name}E${epoch}_operun" $epoch
+  cd Balmorel
+  ((epoch++))
 done
