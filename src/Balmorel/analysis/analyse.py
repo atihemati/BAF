@@ -665,20 +665,22 @@ def get(ctx, symbol: str, pars, filters: str, diff: bool):
 @CLI.command()
 @click.pass_context
 @click.argument('scenario', type=str, required=True)
+@click.argument('epoch', type=int, required=True)
 @click.option('--nth-max', type=int, required=False, default=3, help="Which nth maximum backup production to interpret as required backup capacity Default is 3, as it could be interpreted as a LOLE = 3 h condition.")
-def adequacy(ctx, scenario: str, nth_max: int):
+def adequacy(ctx, scenario: str, epoch: int, nth_max: int):
     "Quantify the adequacy in terms of LOLE (h) and energy not supplied (TWh)"
     
     # Find path to scenario
+    epoch_scenario_name = scenario+f'_E{epoch}'
     model = ctx.obj['Balmorel']
-    model_path = os.path.join(ctx.obj['path'], model.scname_to_scfolder[scenario], 'model')
+    model_path = os.path.join(ctx.obj['path'], model.scname_to_scfolder[epoch_scenario_name], 'model')
 
     # Get mainresults files
-    res = MainResults('MainResults_%s.gdx'%scenario, paths=model_path, system_directory=ctx.obj['gams_system_directory'])
+    res = MainResults('MainResults_%s.gdx'%epoch_scenario_name, paths=model_path, system_directory=ctx.obj['gams_system_directory'])
     
     # Get backup production
-    df = res.get_result('PRO_YCRAGFST').query('Scenario == @scenario and Generation.str.contains("BACKUP")')
-    
+    df = res.get_result('PRO_YCRAGFST').query('Scenario == @epoch_scenario_name and Generation.str.contains("BACKUP")')
+
     # Get backup 'capacity' based on the nth maximum production from BACKUP units (nth_max = 1 => No inadequacy, nth_max = 3 => LOLE = 3 h, perhaps)
     if nth_max == -1:
         cap = df.pivot_table(index=['Region'], columns=['Commodity'],
@@ -689,18 +691,28 @@ def adequacy(ctx, scenario: str, nth_max: int):
             .apply(lambda x: x.nlargest(nth_max).iloc[-1])  # Selects N'th max
             .unstack()  # Reshapes the data into a table
         )
-    cap.to_csv('analysis/output/%s_backcapN%d.csv'%(scenario, nth_max))
     
     ## Get energy not served
     ENS = df.pivot_table(index=['Season', 'Time'], columns='Commodity',
                           values='Value', aggfunc='sum')
     
     df_out = pd.DataFrame({
+        'epoch'   : epoch,
         'ENS_TWh' : ENS.sum() / 1e6,
         'LOLE_h'  : ENS.count()
     })
+    cap['epoch'] = epoch
+
+    # Save
+    files = [f'analysis/output/{scenario}_backcapN{nth_max}.csv',
+             f'analysis/output/{scenario}_adeq.csv']
     
-    df_out.to_csv('analysis/output/%s_adeq.csv'%scenario)
+    if epoch == 0:
+        cap.to_csv(files[0])
+        df_out.to_csv(files[1])
+    else:
+        cap.to_csv(files[0], mode='a', header=False)
+        df_out.to_csv(files[1], mode='a', header=False)
 
 
 @CLI.command()
