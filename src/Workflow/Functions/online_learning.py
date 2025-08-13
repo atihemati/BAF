@@ -38,11 +38,13 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str):
     ctx.obj['plot_ext'] = plot_ext
 
     epoch = 0    
-    model = pretrain(5)
+    days = 7
+    n_scenarios = 8
+    model = pretrain(5, days=days, n_scenarios=n_scenarios)
     os.chdir('Balmorel')
 
     while epoch < 100:
-        for runtype in ['capacity', 'dispatch', 'operun']:
+        for runtype in ['capacity', 'dispatch']:
             
             os.system('rm operun/data/*.inc')
             
@@ -65,9 +67,9 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str):
                 # Rename balopt back
                 os.system(f'mv "operun/model/balopt.opt" "operun/model/balopt_{runtype}.opt"')
         
-        os.system(f'pixi run python analysis/analyse.py adequacy "{scenario}_operun" {epoch}')
+        os.system(f'pixi run python analysis/analyse.py adequacy "{scenario}_dispatch" {epoch}')
         os.chdir('../')
-        model = train(model, f"{scenario}_operun", epoch)
+        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios)
         os.chdir('Balmorel')
         
         epoch += 1

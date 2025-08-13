@@ -478,20 +478,20 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
         path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
         
-def pretrain(epochs: int):
-    model = ScenarioGenerator(input_shape=(24, 72), latent_dim=64)
-    model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv', k_days=1)
+def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4):
+    model = ScenarioGenerator(input_shape=(days*24, 72), latent_dim=64)
+    model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv', k_days=days)
     model.pretrain(epochs=epochs, batch_size=256)
     
     # create new incfiles
-    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=1)
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=n_scenarios)
     convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
 
     # model.save_model(f'Pre-Processing/Output/{scenario}_model.pth')
 
     return model
 
-def train(model: ScenarioGenerator, scenario: str, epoch: int):
+def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=4):
     
     # Get the objective value
     df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_adeq.csv')).query(f'epoch == {epoch}')
@@ -504,7 +504,7 @@ def train(model: ScenarioGenerator, scenario: str, epoch: int):
     model.update(obj_value, epoch=epoch)
     
     # create new incfiles
-    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=1)
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=n_scenarios)
     convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
     
     return model

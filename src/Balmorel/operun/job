@@ -27,15 +27,15 @@
 # here follow the commands you want to execute with input.in as the input file
 
 ### Path to GAMS binary and pixi
-export PATH=/appl/gams/47.6.0:$PATH
+export PATH=/opt/gams/48.5:$PATH
 export PATH=/zhome/c0/2/105719/.pixi/bin:$PATH
 
-epoch=2
+epoch=0
+name='test2'
 
 ### Pretraining
-# pixi run python Workflow/Functions/neural_network.py pretrain test_operun 20
+pixi run python Workflow/Functions/neural_network.py pretrain "${name}_operun" 5
 cd Balmorel
-name='test'
 
 while [ $epoch -le 201 ]
 do
@@ -98,7 +98,7 @@ do
         # analyse adequacy ${name}_operun --nth-max 3
     done
     
-    pixi run python analysis/analyse.py adequacy "${name}_operun_E${epoch}"
+    pixi run python analysis/analyse.py adequacy "${name}_operun" $epoch
 
   cd ../
   pixi run python Workflow/Functions/neural_network.py train "${name}_operun" $epoch
