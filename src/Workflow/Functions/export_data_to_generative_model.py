@@ -65,8 +65,6 @@ def export_to_generative_model(scenario_folder: str,
                             IR,
                             IA) 
         
-        # Remove constant profiles
-        
         if parameter == parameters[0]:
             df.T.to_csv(filename%weather_year, header=True)
         else:
@@ -76,7 +74,7 @@ def export_to_generative_model(scenario_folder: str,
 def correct_format(df: pd.DataFrame, parameter: str, weather_year: int, IR: list, IA: list):
     
     # Extract unique dimensions
-    unique_sets = [col for col in df.columns if not(col in ['SSS', 'TTT', 'Value'])]
+    unique_sets = [col for col in df.columns if col not in ['SSS', 'TTT', 'Value']]
     
     # Remove unnecessary model years
     if 'YYY' in df.columns:
@@ -94,14 +92,48 @@ def correct_format(df: pd.DataFrame, parameter: str, weather_year: int, IR: list
     df.loc[:, ['WY']] = weather_year
     df.loc[:, ['Parameter']] = parameter + "|" + df[unique_sets].astype(str).agg("|".join, axis=1)
     
-    # Add missing temporal sets
+    S_values = [f'S{i:02d}' for i in range(1, 53)]
+    T_values = [f'T{i:03d}' for i in range(1, 169)]
+    
+    # Find missing values (zero interpreted as no value in GAMS)
+    if 'SSS' in df.columns and 'TTT' in df.columns:
+        # Fill out some of the missing S and T values
+        df = df.pivot_table(index=['WY', 'SSS', 'TTT'], 
+                            columns='Parameter',
+                            values='Value',
+                            fill_value=0)
+        
+        # Fill out the remaining missing values, if there are any left
+        ST_exist = set(df.loc[weather_year].index)
+        ST_all = set(pd.MultiIndex.from_product((S_values, T_values)))
+        ST_missing = ST_all - ST_exist
+        if len(ST_missing) > 0:
+            S_missing, T_missing = zip(*ST_missing)
+            missing_index = pd.MultiIndex.from_arrays(([weather_year]*len(ST_missing), S_missing, T_missing), names=['WY', 'SSS', 'TTT'])
+            df = concat_missing(df, missing_index)
+        df = stack_and_reset(df)
+    
+    elif 'SSS' in df.columns:
+        # Fill out some of the missing S values
+        df = df.pivot_table(index=['WY', 'SSS'], 
+                            columns='Parameter',
+                            values='Value',
+                            fill_value=0)
+        
+        # Fill out the remaining missing values
+        S_exist = set(df.loc[weather_year].index)
+        S_all = set(S_values)
+        S_missing = list(S_all - S_exist)
+        if len(S_missing) > 0:
+            missing_index = pd.MultiIndex.from_arrays(([weather_year]*len(S_missing), S_missing), names=['WY', 'SSS'])
+            df = concat_missing(df, missing_index)
+        df = stack_and_reset(df)
+        
     if not('SSS' in df.columns):
-        S_values = [f'S{i:02d}' for i in range(1, 53)]
         len_before = len(df)
         df = pd.concat([df]*52, ignore_index=True)
         df.loc[:, ['SSS']] = np.repeat(S_values, len_before)
     if not('TTT' in df.columns):
-        T_values = [f'T{i:03d}' for i in range(1, 169)]
         len_before = len(df)
         df = pd.concat([df]*168, ignore_index=True)
         df.loc[:, ['TTT']] = np.repeat(T_values, len_before)
@@ -113,6 +145,23 @@ def correct_format(df: pd.DataFrame, parameter: str, weather_year: int, IR: list
     if not(np.isclose(sum_before, sum_after, atol=0.1)):
         raise ValueError(f'Aggregation didnt work!\nSum before: {sum_before}\nSum after: {sum_after}')
 
+    return df
+
+def concat_missing(df: pd.DataFrame, missing_index: pd.MultiIndex):
+    
+    df_missing = pd.DataFrame(
+        index=missing_index,
+        columns=df.columns,
+        data=0.0
+    )
+    df = pd.concat((df, df_missing))
+    
+    return df
+
+def stack_and_reset(df: pd.DataFrame):
+    df=df.sort_index().stack()
+    df.name = 'Value'
+    df = df.reset_index()
     return df
 
 def store_config(config: ConfigParser):
