@@ -134,7 +134,7 @@ def CLI(ctx, scenario_name: str, scenario_folder: str, dark_style: bool, plot_ex
     
 
     logs_dir = logfile.parent
-    ckpt_path = logs_dir / f"{scenario}_model_checkpoint.pth"
+    ckpt_path = logs_dir / f"{scenario_name}_model_checkpoint.pth"
 
     os.chdir('Balmorel')
     os.system(f'mkdir simex_{scenario_name}')
