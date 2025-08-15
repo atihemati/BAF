@@ -17,7 +17,7 @@
 ### -- set walltime limit: hh:mm --
 #BSUB -W 10:00
 ### -- set the email address --
-#BSUB -u mberos@dtu.dk
+#BSUB -u ahego@dtu.dk
 ### -- send notification at start --
 ##BSUB -B
 ### -- send notification at completion --
@@ -28,7 +28,18 @@
 #BSUB -e ./Logs/testing_online_learning_%J.err
 # here follow the commands you want to execute with input.in as the input file
 
-export PATH=/opt/gams/47.6.0:$PATH
-export PATH=/zhome/c0/2/105719/.pixi/bin:$PATH
+export PATH=/appl/gams/47.6.0:$PATH
+export PATH=~/.pixi/bin:$PATH
 
-pixi run python Workflow/Functions/online_learning.py DO_D4W4
+#pixi run python Workflow/Functions/online_learning.py DO_D4W4
+
+--- Run ---
+pixi run python Workflow/Functions/online_learning.py DO_D4W4 \
+  --pretrain-epochs 200 \
+  --update-epochs 200 \
+  --days 1 \
+  --n-scenarios 2 \
+  --latent-dim 64 \
+  --seed 42 \
+  --batch-size 256 \
+  --learning-rate 0.0005 \

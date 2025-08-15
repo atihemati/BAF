@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 
 class ScenarioGenerator(nn.Module):
-    def __init__(self, X_tensor=None, input_shape=(24, 72), latent_dim=32, device='cpu', lr=0.0005, seed=42, scale=True):
+    def __init__(self, X_tensor=None, input_shape=(24, 72), latent_dim=32, device='cpu', lr=0.0005, seed=42, scale=True, logger=None):
         """
         A non-conditional autoencoder-based Scenario Generator.
         Removes all usages of condition tensors and condition dimensions.
@@ -38,6 +38,7 @@ class ScenarioGenerator(nn.Module):
         self.X_original = None
         self.reconstruction_scenarios = None
         self.scale = scale
+        self.logger = logger
 
         torch.manual_seed(self.seed)
         if torch.backends.cudnn.enabled:
@@ -171,12 +172,14 @@ class ScenarioGenerator(nn.Module):
 
         dataset = TensorDataset(self.X_tensor)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        log = (self.logger.info if self.logger else print)
 
         self.train()
-        print("-" * 121)
-        print("Pretraining the model...")
-        print("*" * 74)
-        print(f"Pretraining on {len(loader)} batches with batch size {batch_size} for {epochs} epochs.")
+        log("-" * 121)
+        log("Pretraining the model...")
+        log("*" * 74)
+        log(f"Pretraining on {len(loader)} batches with batch size {batch_size} for {epochs} epochs.")
 
         for epoch in range(epochs):
             total_loss = 0.0
@@ -190,7 +193,7 @@ class ScenarioGenerator(nn.Module):
                 total_loss += loss.item()
             avg_loss = total_loss
             self.pretrain_loss_history.append(avg_loss)
-            print(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.6f}")
+            log(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.6f}")
 
     def generate_scenario(self, batch_size=32, n_scenarios=10):
         if self.X_tensor is None:
@@ -265,10 +268,13 @@ class ScenarioGenerator(nn.Module):
         return self.new_scenarios, self.empty_df
 
     def update(self, obj_value, epoch=None):
+        
+        log = (self.logger.info if self.logger else print)
+
         if epoch == 0:
-            print("-" * 121)
-            print("Updating model with the feedback...")
-            print("*" * 74)
+            log("-" * 121)
+            log("Updating model with the feedback...")
+            log("*" * 74)
 
         self.obj_values.append(obj_value)
         policy_loss = obj_value
@@ -280,7 +286,7 @@ class ScenarioGenerator(nn.Module):
 
         self.total_loss_history.append(total_batch_loss.item())
         prefix = f'Epoch {epoch+1} - ' if epoch is not None else ''
-        print(f"{prefix}Total Loss: {total_batch_loss.item():.6f} | Reconstruction Loss: {self.reconstruction_loss_total.item():.6f} | Policy Loss: {policy_loss.item():.6f}")
+        log(f"{prefix}Total Loss: {total_batch_loss.item():.6f} | Reconstruction Loss: {self.reconstruction_loss_total.item():.6f} | Policy Loss: {policy_loss.item():.6f}")
 
     def plot_loss_history(self):
         plt.plot(self.pretrain_loss_history, label='Pretrain Loss')
@@ -390,7 +396,8 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
                         scenario: str,
                         scenario_folder: str,
                         balmorel_model_path: str = 'Balmorel',
-                        gams_system_directory: str | None = None):
+                        gams_system_directory: str | None = None,
+                        overwrite_data_load: bool = False):
     
     
     # Get parameters and temporal resolution
@@ -401,7 +408,7 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
     
     # Load Balmorel input data for descriptions and set names
     model = Balmorel(balmorel_model_path, gams_system_directory=gams_system_directory)
-    model.load_incfiles(scenario)
+    model.load_incfiles(scenario, overwrite=overwrite_data_load)
     
     placeholder_parameter = ''
     for parameter in parameters:
@@ -477,26 +484,63 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
         suffix='\n/;',
         path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
+    
+#%% ------------------------------- ###
         
-def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4):
-    model = ScenarioGenerator(input_shape=(days*24, 72), latent_dim=64)
+def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4, latent_dim: int = 64, batch_size: int = 256, learning_rate: float = 5e-4, seed: int = 42, logger=None):
+    """
+    Pretrain the scenario generator.
+    Parameters
+    ----------
+    epochs : int
+        Number of pretraining epochs.
+    days : int, default 1
+        Length of each block in days (input_shape uses days*24).
+    n_scenarios : int, default 4
+        How many scenarios to generate after pretraining.
+    latent_dim : int, default 64
+        Latent space dimensionality for the ScenarioGenerator.
+    batch_size : int, default 256
+        Batch size used in pretraining and generation.
+    learning_rate : float, default 1e-3
+        Optimizer learning rate for the ScenarioGenerator.
+    seed : int, default 42
+        Random seed for reproducibility.
+    """
+    
+    log = (logger.info if logger else print)
+
+
+    model = ScenarioGenerator(input_shape=(days*24, 72), latent_dim=latent_dim, lr=learning_rate, seed=seed, logger=logger)
     model.load_and_process_data('Pre-Processing/Output/genmodel_input.csv', k_days=days)
-    model.pretrain(epochs=epochs, batch_size=256)
+    
+    log(f"Pretraining for {epochs} epochs, batch_size={batch_size}, lr={learning_rate}, seed={seed}")
+    
+    model.pretrain(epochs=epochs, batch_size=batch_size)
+    
+    log("Pretraining done; generating initial scenarios")
     
     # create new incfiles
-    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=n_scenarios)
-    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=batch_size, n_scenarios=n_scenarios)
+    
+    log("Converting scenarios to INC files")
+    
+    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'), overwrite_data_load=True)
 
     # model.save_model(f'Pre-Processing/Output/{scenario}_model.pth')
 
     return model
 
-def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=4):
+def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=4, batch_size: int = 256, logger=None):
     
     # Get the objective value
     df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_adeq.csv')).query(f'epoch == {epoch}')
     # df2 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_backcapN3.csv'))
     # print(df2)
+    
+    log = (logger.info if logger else print)
+    
+    log("read objective value from csv")
     
     obj_value = np.sum(df1[['ENS_TWh', 'LOLE_h']].values)
 
@@ -504,7 +548,9 @@ def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=
     model.update(obj_value, epoch=epoch)
     
     # create new incfiles
-    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=256, n_scenarios=n_scenarios)
-    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory='/opt/gams/48.5')
+    new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=batch_size, n_scenarios=n_scenarios)
+    
+    log("running convert_to_incfiles")
+    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'))
     
     return model
