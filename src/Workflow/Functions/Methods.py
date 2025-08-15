@@ -10,7 +10,8 @@ Created on 20.04.2024
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from .GeneralHelperFunctions import store_capcred, AntaresOutput, symbol_to_df, get_capex
+from pybalmorel.utils import symbol_to_df
+from .GeneralHelperFunctions import store_capcred, AntaresOutput, get_capex
 
 style = 'report'
 

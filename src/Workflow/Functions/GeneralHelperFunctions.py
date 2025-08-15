@@ -1,3 +1,4 @@
+
 """
 General Helper Functions
 
@@ -11,12 +12,17 @@ Created on 18/08/2023 by
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Union
+from functools import wraps
+from pybalmorel import MainResults
+from pybalmorel.utils import symbol_to_df 
 import shutil
 import os
-from typing import Union
 import time
 import sys
 import configparser
+import gams
+import click
 
 #%% ------------------------------- ###
 ###          1. Logging etc.        ###
@@ -52,29 +58,33 @@ def log_process_time(file_path, iteration, process_name, delta_time):
         with open(file_path, 'w') as file:
             file.write('Iteration,Process,Time\n')
             file.write('%d,%s,%d\n'%(iteration, process_name, delta_time))
+            
+def get_balmorel_time_and_hours(result: MainResults):
+    """Get the temporal resolution using all_endofmodel.gdx
+
+    Args:
+        result (MainResults): _description_
+
+    Returns:
+        pd.MultiIndex, list: pandas index of Balmorel timeslices, list of corresponding hours in a year 
+    """
+    
+    # Get balmorel_index from electricity prices, which are defined for all hours since it's a dual variable
+    elprices = result.get_result('EL_PRICE_YCRST')
+    S, T  = pd.Series(elprices['Season'].unique()), pd.Series(elprices['Time'].unique())
+    balmorel_index = pd.MultiIndex.from_product((list(S), list(T)), names=('Season', 'Time'))
+    
+    # Convert to hours in a year    
+    weeks = S.str.lstrip('S').astype(int)
+    hours = T.str.lstrip('T').astype(int)
+    hour_index = [(week-1)*168 + hour - 1 for week in weeks for hour in hours]
+    
+    return balmorel_index, hour_index
+
 
 #%% ------------------------------- ###
 ###           2. Dataframes         ###
 ### ------------------------------- ###
-
-### 1.1 GDX to DataFrames
-def symbol_to_df(db, symbol, cols='None'):
-    """
-    Loads a symbol from a GDX database into a pandas dataframe
-
-    Args:
-        db (GamsDatabase): The loaded gdx file
-        symbol (string): The wanted symbol in the gdx file
-        cols (list): The columns
-    """   
-    df = dict( (tuple(rec.keys), rec.value) for rec in db[symbol] )
-    df = pd.DataFrame(df, index=['Value']).T.reset_index() # Convert to dataframe
-    if cols != 'None':
-        try:
-            df.columns = cols
-        except:
-            pass
-    return df 
 
 ### 1.2 Create a filter for either all values or only the highest and lowest value in a column
 def filter_low_max(df, col='none', plot_all=True):
@@ -161,7 +171,27 @@ def doLDC(array, n_bins, plot=False, fig = None, ax = None):
 ###        4. Antares Input         ###
 ### ------------------------------- ###
 
+def set_cluster_attribute(name: str, attribute: str, value: any, 
+                          node: str, cluster_type: str = 'thermal'):
+    """Set the attribute of a 
+
+    Args:
+        name (str): The name of the cluster element, i.e. the clusterfile section
+        attribute (str): The attribute of the cluster element to set, i.e. the clusterfile option
+        value (any): The value to set
+        node (str): The node containing the cluster
+        cluster_type (str, optional): The type of cluster, e.g. 'thermal', 'renewables'... Defaults to 'thermal'.
+    """
+    discharge_config = configparser.ConfigParser()
+    discharge_config.read('Antares/input/%s/clusters/%s/list.ini'%(cluster_type, node.lower()))
+    discharge_config.set(name, attribute, str(value))
+    with open('Antares/input/%s/clusters/%s/list.ini'%(cluster_type, node.lower()), 'w') as f:
+        discharge_config.write(f)
+    discharge_config.clear()
+
 def create_transmission_input(wk_dir, ant_study, area_from, area_to, trans_cap, hurdle_costs):
+    area_from = area_from.lower()
+    area_to = area_to.lower()
     try: 
         f = open(wk_dir+ant_study + '/input/links/%s/%s_parameters.txt'%(area_from, area_to))
         p = wk_dir+ant_study + '/input/links/%s/%s_parameters.txt'%(area_from, area_to)
@@ -195,22 +225,27 @@ def create_transmission_input(wk_dir, ant_study, area_from, area_to, trans_cap, 
                 f.write(str(int(trans_cap[1])) + '\n')  
         
 
-def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
+def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL, ANNUITYCG, include_capital_costs: bool = True):
     """Gets average marginal cost of generators in cap[idx_cap], provided VOM, fuel and emission policy data 
 
     Args:
-        year (_type_): _description_
-        cap (_type_): _description_
-        idx_cap (_type_): _description_
-        totalcap (_type_): _description_
-        GDATA (_type_): _description_
-        FPRICE (_type_): _description_
-        FDATA (_type_): _description_
-        EMI_POL (_type_): _description_
+        year (str): Year in string
+        cap (pd.DataFrame): All capacities
+        idx_cap (pd.DataFrame): Index for capacities
+        fuel (str): Fuel for generator
+        GDATA (pd.DataFrame): Technology data
+        FPRICE (pd.DataFrame): Fuel prices
+        FDATA (pd.DataFrame): Fuel data
+        EMI_POL (pd.DataFrame): Emission policy (if carbon tax)
+        ANNUITYCG (pd.DataFrame): Annuity (if capital cost included)
+        include_capital_costs (bool): Include CAPEX and Fixed O&M to marginal price?
     """
     ## Weighting capacities on highest data level (G)
     totalcap = cap.loc[idx_cap, 'Value'].sum() * 1e3 # MW
-        
+    country = cap.loc[idx_cap, 'C'].unique()[0] # Should just be one country
+    
+    print(country)
+    
     mc_cost_temp = 0
     for G in cap[idx_cap].G.unique():
         Gcap = cap.loc[idx_cap & (cap.G == G), 'Value'].sum() * 1e3 # MW
@@ -234,7 +269,7 @@ def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
         
         # Fuel cost
         try:
-            mc_cost_temp += FPRICE.loc[(year, 'DK1', fuel), 'Value'] / GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK1
+            mc_cost_temp += FPRICE.loc[(year, 'DK', fuel), 'Value'] / GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK
             # print('Added fuel cost: ', mc_cost_temp)
         except:
             pass
@@ -248,6 +283,28 @@ def get_marginal_costs(year, cap, idx_cap, fuel, GDATA, FPRICE, FDATA, EMI_POL):
             # print('Added CO2 cost: ', mc_cost_temp)
         except:
             pass
+        
+        if include_capital_costs:
+        
+            # The issue with this is that you don't know when the generators produce!
+            # A lot of the capital costs could be allocated to a few hours, such as common ~3000 €/MWh prices in Balmorel investment opt results.
+            # A flat / 8760 distribution is not realistic
+        
+            # CAPEX   
+            try:
+                # Get endogenous share
+                endo_share = cap.query('Var == "ENDOGENOUS"').loc[idx_cap & (cap.G == G), 'Value'].sum() * 1e3 / Gcap
+                # print(f'Endogenous share for {G}: {endo_share*100} %')
+                mc_cost_temp += GDATA.loc[(G, 'GDINVCOST0'), 'Value'] * 1e6 / 8760 * Gcap * endo_share * ANNUITYCG.loc[(country, G), 'Value'] / totalcap
+                
+            except:
+                pass
+                
+            # Fixed O&M
+            try:
+                mc_cost_temp += GDATA.loc[(G, 'GDOMFCOST0'), 'Value'] * 1e3 / 8760 * Gcap / totalcap
+            except:
+                pass
         
     return mc_cost_temp
 
@@ -269,7 +326,7 @@ def get_efficiency(cap: pd.DataFrame, idx_cap: pd.Index, GDATA: pd.DataFrame):
         
         # Fuel cost
         try:
-            eff_temp += GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK1
+            eff_temp += GDATA.loc[(G, 'GDFE'), 'Value'] * Gcap / totalcap # Same prices everywhere as in DK
             # print('Added fuel cost: ', mc_cost_temp)
         except:
             pass
@@ -368,6 +425,9 @@ def ReadIncFilePrefix(name, incfile_prefix_path, weather_year):
 
 
 class AntaresOutput:
+    """
+    A class for handling Antares outputs, based on Antares 8.7
+    """
     
     def __init__(self, result_name: str, folder_name: str='Antares', wk_dir: str='.'):
         # Set path to result
@@ -460,6 +520,175 @@ class AntaresOutput:
             # print('No mc-year results')
             return 0
 
+
+class AntaresInput:
+    """
+    A class for handling Antares inputs, based on Antares 8.7
+    """
+    
+    def __init__(self, folder_name: str='Antares', wk_dir: str='.'):
+        # Set path to result
+        self.path = os.path.join(wk_dir, folder_name, 'input')
+        self.wk_dir = wk_dir
+        
+        # Thermal Cluster Data
+        self.thermal_clusters = {}
+        self.path_thermal_clusters = {}
+        self.path_load = {}
+        for area in os.listdir(os.path.join(self.path, 'thermal/clusters')):
+            self.path_thermal_clusters[area] = {}
+            self.path_thermal_clusters[area]['ini'] = os.path.join(self.path, 'thermal/clusters', area, 'list.ini')
+            self.path_thermal_clusters[area]['series'] = os.path.join(self.path, 'thermal/series', area)
+            self.path_thermal_clusters[area]['prepro'] = os.path.join(self.path, 'thermal/prepro', area)
+            self.path_load[area] = os.path.join(self.path, 'load/series', f'load_{area}.txt')
+            
+            config = configparser.ConfigParser()
+            config.read(self.path_thermal_clusters[area]['ini'])
+            self.thermal_clusters[area] = config.sections()
+
+    def thermal(self, area: str, series: bool = False, cluster_name: str = ''):
+        
+        area = area.lower()
+        cluster_name = cluster_name.lower()
+        if not(series):
+            output = configparser.ConfigParser()
+            output.read(self.path_thermal_clusters[area]['ini'])
+        else:
+            output = pd.read_table(os.path.join(
+                self.path_thermal_clusters[area]['series'],
+                cluster_name,
+                'series.txt'
+            ), header=None)
+
+        return output
+
+    def load(self, area: str):
+        """Read the load timeseries of an area
+
+        Args:
+            area (str): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        area = area.lower()
+        output = pd.read_table(self.path_load[area], header=None)
+        return output
+
+    def create_thermal(self, 
+                       area: str,
+                       cluster_name: str,
+                       fuel: str, 
+                       enabled: bool = False, 
+                       capacity: float = 0,
+                       marginal_cost: float = 0):
+        """Creates a new cluster in area. 
+        Note that if a cluster already exists with this name,
+        its data be overwritten.
+        
+
+        Args:
+            area (str): _description_
+            cluster_name (str): _description_
+            fuel (str): _description_
+            enabled (bool, optional): _description_. Defaults to False.
+            capacity (float, optional): _description_. Defaults to 0.
+            marginal_cost (float, optional): _description_. Defaults to 0.
+
+        Returns:
+            _type_: _description_
+        """
+        
+        cluster_name = cluster_name.lower()
+        area = area.lower()
+        fuel = fuel.lower()
+        
+        # Create section in .ini file
+        config = self.thermal(area, cluster_name=cluster_name)
+        try:
+            config.add_section(cluster_name)
+        except configparser.DuplicateSectionError:
+            config.remove_section(cluster_name)
+            config.add_section(cluster_name)
+            # print(f'{cluster_name} already existed in {area}, overwriting')
+        
+        config.set(cluster_name, 'name', cluster_name)
+        config.set(cluster_name, 'group', fuel)
+        config.set(cluster_name, 'unitcount', '1')
+        config.set(cluster_name, 'co2', '0')
+        config.set(cluster_name, 'nh3', '0')
+        config.set(cluster_name, 'nmvoc', '0')
+        config.set(cluster_name, 'nox', '0')
+        config.set(cluster_name, 'op1', '0')
+        config.set(cluster_name, 'op2', '0')
+        config.set(cluster_name, 'op3', '0')
+        config.set(cluster_name, 'op4', '0')
+        config.set(cluster_name, 'op5', '0')
+        config.set(cluster_name, 'pm10', '0')
+        config.set(cluster_name, 'pm2_5', '0')
+        config.set(cluster_name, 'pm5', '0')
+        config.set(cluster_name, 'so2', '0')
+        if enabled:
+            config.set(cluster_name, 'nominalcapacity', str(capacity))
+            config.set(cluster_name, 'marginal-cost', str(marginal_cost))
+            config.set(cluster_name, 'market-bid-cost', str(marginal_cost))
+        else:
+            config.set(cluster_name, 'enabled', str(enabled).lower())        
+
+        with open(self.path_thermal_clusters[area]['ini'], 'w') as f:
+            config.write(f)    
+        
+        # Create other files
+        cluster_series_path = os.path.join(self.path_thermal_clusters[area]['series'], cluster_name)
+        if not(os.path.exists(cluster_series_path.rstrip(cluster_name))):
+            make_directory_if_not_exist(cluster_series_path.rstrip(cluster_name))
+        make_directory_if_not_exist(cluster_series_path)
+    
+        with open(os.path.join(cluster_series_path, 'CO2Cost.txt'), 'w') as f:
+            f.write('')
+        with open(os.path.join(cluster_series_path, 'fuelCost.txt'), 'w') as f:
+            f.write('')
+        with open(os.path.join(cluster_series_path, 'series.txt'), 'w') as f:
+            f.write("\n".join([str(capacity)]*8760))
+            f.write("\n")
+            
+        prepro_path = os.path.join(self.path_thermal_clusters[area]['prepro'], cluster_name)
+        if not(os.path.exists(prepro_path.rstrip(cluster_name))):
+            make_directory_if_not_exist(prepro_path.rstrip(cluster_name))
+        make_directory_if_not_exist(prepro_path)
+        with open(os.path.join(prepro_path, 'data.txt'), 'w') as f:
+            f.write("\n".join(["1\t1\t0\t0\t0\t0"]*365))
+            f.write('\n')
+        with open(os.path.join(prepro_path, 'modulation.txt'), 'w') as f:
+            f.write("\n".join(["1\t1\t1\t0"]*8760))
+            f.write('\n')
+            
+        # Append to the class cluster list
+        self.thermal_clusters[area].append(cluster_name)
+            
+        return config, cluster_series_path, prepro_path
+
+    def purge_thermal_clusters(self, area: str):
+        """Will delete all thermal cluster data within an area
+
+        Args:
+            area (str): _description_
+        """
+        area = area.lower()
+        shutil.rmtree(self.path_thermal_clusters[area]['series'])
+        shutil.rmtree(self.path_thermal_clusters[area]['prepro'])
+        with open(self.path_thermal_clusters[area]['ini'], 'w') as f:
+            f.write('')
+            
+        self.thermal_clusters[area] = []
+
+def make_directory_if_not_exist(path: str):
+    if os.path.exists(path):
+        pass
+        # print(f'{path} already existed')
+    else:
+        os.mkdir(path)
+
 def convert_int_to_mc_year(mc_year: int):
     # Make mc_year into correct format
     mc_year = ''.join(['0' for i in range(5-len(str(mc_year)))]) + str(mc_year) 
@@ -468,6 +697,24 @@ def convert_int_to_mc_year(mc_year: int):
 #%% ------------------------------- ###
 ###          6. Utilities           ###
 ### ------------------------------- ###
+
+def set_scenariobuilder_values(element: str,
+                               weather_years = 35):
+    """Build the chronological weather year scenarios for an element, so weather years don't mix 
+
+    Args:
+        element (str): The name of the element, should include a '%d' for the weather year formatte
+        weather_years (int, optional): The amount of weather years. Defaults to 35.
+    """
+    
+    scenariobuilder = configparser.ConfigParser()
+    scenariobuilder.read('Antares/settings/scenariobuilder.dat')
+    
+    for weather_year in range(weather_years):
+        scenariobuilder.set('default ruleset', element%weather_year, str(weather_year+1))
+        
+    with open('Antares/settings/scenariobuilder.dat', 'w') as f:
+        scenariobuilder.write(f)
 
 # By ChatGPT
 def find_and_copy_files(source_folder, destination_folder, file_contains):
@@ -543,6 +790,57 @@ def check_antares_compilation(wait_sec: int, max_waits: int, N_errors: int):
         
     return compile_finished, N_errors
     
+@click.pass_context
+def data_context(ctx):
+    # Create data filepaths
+    ctx.obj['data_filepaths'] = {
+        'offshore_wind' : 'Pre-Processing/Data/offshore_wind/offshore_wind_%d.csv',
+        'onshore_wind'  : 'Pre-Processing/Data/onshore_wind/onshore_wind_%d.csv',
+        'solar_pv'      : 'Pre-Processing/Data/solar_pv/solar_pv_%d.csv',
+        'heat'          : 'Pre-Processing/Data/heating_coeff/heating_coeff_%d.csv',
+        'load'          : 'Pre-Processing/Data/load_non_thermosensitive/load_non_thermosensitive.csv',
+    }
+    
+    ctx.obj['data_value_column'] = {
+        'offshore_wind' : 'offshore_wind',
+        'onshore_wind' : 'onshore_wind',
+        'solar_pv' : 'pv',
+        'heat'    : 'heating_coeff',
+        'load' : 'non_thermosensitive',
+    }
+        
+    return ctx
+
+def load_OSMOSE_data(files: list, print_files_read: bool = False):
+    """Load data from OSMOSE and do something with func(*args, **kwargs)"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(ctx, *args, **kwargs):
+            data_filepaths = ctx.obj['data_filepaths']
+            value_names = ctx.obj['data_value_column']
+            weather_years = ctx.obj['weather_years']
+            
+            for data in files:
+                
+                # Load input data
+                stoch_year_data = {}
+                if data != 'load':
+                    for year in weather_years:
+                        filename = data_filepaths[data]%year
+                        if print_files_read:
+                            print('Reading %s'%filename)
+                        stoch_year_data[year] = pd.read_csv(filename).pivot_table(index='time_id',
+                                                                                columns='country', 
+                                                                                values=value_names[data])
+                else:
+                    stoch_year_data[0] = pd.read_csv(data_filepaths[data]).pivot_table(index='time_id',
+                                                                            columns='country', 
+                                                                            values=value_names[data])
+                
+                func(ctx, data, stoch_year_data, *args, **kwargs)
+        
+        return wrapper
+    return decorator
 
 if __name__ == '__main__':
     
@@ -554,4 +852,5 @@ if __name__ == '__main__':
         cf.get('fr_psp', 'type'),
         cf.get('fr_psp', 'operator')
     )
+    
     

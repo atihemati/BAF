@@ -11,13 +11,23 @@ generate-balmorel-timeseries = "cd src && pixi run python Pre-Processing/preproc
 generate-balmorel-hydro = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-hydro"
 generate-balmorel-heat-series = "cd src && python Pre-Processing/preprocessing.py generate-balmorel-heat-series"
 preprocessing = "cd src && snakemake -s Jobs/preprocessing.smk"
+initialisation = "cd src && python -m Workflow.Initialisation" 
+periprocess = "cd src && python Workflow/PeriProcessing.py" 
+postprocess = "cd src && python Workflow/PostProcessing.py" 
 space-aggregate-balmorel = "cd src && python Pre-Processing/spatial_aggregation.py"
 analyse = "cd src/Balmorel && python Analysis/analyse.py "
+temporal-agg = "cd src && python Workflow/TimeseriesAggregation.py"
 
 [target.win.tasks]
 r = "cmd /c %USERPROFILE%\\AppData\\Local\\Programs\\R\\R-4.2.3\\bin\\x64\\R"
 balmorel = "cd src/Balmorel/base/model && cmd /c C:\\GAMS\\47\\gams Balmorel"
+antares = "cd src && 'C:\\Program Files\\RTE\\Antares\\8.7.0\\bin\\antares-8.7-solver' Antares -n"
 zip-data = "cd src && Jobs/zip_data.bat"
+
+[target.linux.tasks]
+balmorel = "cd src/Balmorel/base/model && gams Balmorel --scenario_name"
+antares = "cd src && antares-8.7-solver Antares -n"
+zip-data = "cd src && Jobs/zip_data.sh"
 
 [dependencies]
 python = "==3.12.9"
@@ -31,6 +41,7 @@ plotly = ">=6.0.0"
 click = ">=8.1.8"
 numpy = ">=2.2.3"
 tsam = ">=2.3.6"
+pytest = ">=8.4.0,<9"
 
 [pypi-dependencies]
 rpy2 = "==3.5.11"
@@ -40,3 +51,6 @@ ptyprocess = ">=0.7.0, <0.8"
 ipykernel = ">=6.29.5, <7"
 pyzmq = ">=26.4.0, <27"
 premailer = ">=3.10.0, <4"
+gamsapi = { version = "==47.6.0", extras = ["transfer"] }
+scikit-learn = "*"
+torch = ">=2.8.0, <3"
