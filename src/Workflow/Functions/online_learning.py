@@ -60,7 +60,7 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
     epoch = 0    
     # days = 1
     # n_scenarios = 2
-    model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed,)
+    model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed)
     
     
     os.chdir('Balmorel')
