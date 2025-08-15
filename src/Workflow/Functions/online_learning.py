@@ -1,10 +1,15 @@
 """
-TITLE
+Bi-Directional Coupling of Balmorel-Balmorel with Online-Learning
 
-Description
+Balmorel investment optimisation is coupled to an operational run,
+with a generative model (decoder-encoder neural network) generating 
+timeslices for the investment run. 
+
+The sum of loss of load expectation and energy not served
+is used to train the generative model for each iteration.
 
 Created on 13.08.2025
-@author: Mathias Berg Rosendal, PhD Student at DTU Management (Energy Economics & Modelling)
+@author: Mathias Berg Rosendal, PhD Student and Atefeh Hemmati Golsefidi, PostDoc at DTU Management
 """
 #%% ------------------------------- ###
 ###             0. CLI              ###
@@ -60,11 +65,13 @@ def _run(cmd: str, logger: logging.Logger, logfile: Path) -> int:
 
 
 @click.command()
-@click.argument('scenario', type=str, required=True)
+@click.pass_context
+@click.option('--scenario-name', type=str, required=True,
+              help='Name of the scenario to run')
+@click.option('--scenario-folder', type=str, required=True,
+              help='The scenario folder in Balmorel/ to run optimisations and simulations')
 @click.option('--dark-style', is_flag=True, required=False, help='Dark plot style')
 @click.option('--plot-ext', type=str, default='.pdf', required=False, help='The extension of the plot, defaults to ".pdf"')
-
-# ---- new tuning options ----
 @click.option('--pretrain-epochs', type=int, default=5, show_default=True,
               help='Number of epochs for initial pretraining')
 @click.option('--update-epochs', type=int, default=1, show_default=True,
@@ -81,16 +88,24 @@ def _run(cmd: str, logger: logging.Logger, logfile: Path) -> int:
               help='Batch size used for pretraining / generation')
 @click.option('--learning-rate', type=float, default=5e-4, show_default=True,
               help='Learning rate for the scenario generator (pretrain/update)')
-
-@click.pass_context
-def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: int, update_epochs: int, days: int, n_scenarios: int,
+def CLI(ctx, scenario_name: str, scenario_folder: str, dark_style: bool, plot_ext: str,
+        pretrain_epochs: int, update_epochs: int, days: int, n_scenarios: int,
         latent_dim: int, seed: int, batch_size: int, learning_rate: float):
     """
-    Description of the CLI
     Online learning driver with logging to src/Logs/<scenario>_<timestamp>.log
-    
+
+    This CLI allows you to run online learning experiments with various configurations.
+
+    Args:
+        scenario_name (str): The name of the scenario to run.
+        scenario_folder (str): The folder where the specific scenario will be run.
+        days (int): The number of days to generate.
+        n_scenarios (int): The number of scenarios (interpreted as weeks) to generate.
+        pretrain_epochs (int): The number of pretraining epochs to run.
+        dark_style (bool): Whether to use a dark plot style.
+        plot_ext (str): The file extension for the plot output.
     """
-    
+
     # Set global style of plot
     if dark_style:
         plt.style.use('dark_background')
@@ -104,9 +119,9 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
     ctx.obj['plot_ext'] = plot_ext
     
     # logging
-    logger, logfile = _setup_logger(scenario)
+    logger, logfile = _setup_logger(scenario_name)
     logger.info("=== Online learning run started ===")
-    logger.info(f"scenario={scenario} pretrain_epochs={pretrain_epochs} update_epochs={update_epochs} "
+    logger.info(f"scenario={scenario_name} pretrain_epochs={pretrain_epochs} update_epochs={update_epochs} "
                 f"days={days} n_scenarios={n_scenarios} latent_dim={latent_dim} seed={seed} "
                 f"batch_size={batch_size} learning_rate={learning_rate}")
     logger.info(f"Logfile: {logfile}")
@@ -115,52 +130,58 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
     logger.info("Starting pretraining...")
     
     epoch = 0    
-    # days = 1
-    # n_scenarios = 2
     model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed, logger=logger)
     
+
     logs_dir = logfile.parent
     ckpt_path = logs_dir / f"{scenario}_model_checkpoint.pth"
 
-    
-    
     os.chdir('Balmorel')
+    os.system(f'mkdir simex_{scenario_name}')
 
     while epoch < update_epochs:
         for runtype in ['capacity', 'dispatch']:
             
-            os.system('rm operun/data/*.inc')
+            os.system(f'rm {scenario_folder}/data/*.inc')
             
             if runtype == 'capacity':
-                os.system('cp -f operun/capexp_data/*.inc operun/data')
+                os.system(f'cp -f {scenario_folder}/capexp_data/*.inc {scenario_folder}/data')
             else:
-                os.system('cp -f operun/S.inc operun/data')
-                os.system(f'cp -f operun/T_{runtype}.inc operun/data/T.inc')
-                os.system(f'mv operun/model/balopt_{runtype}.opt operun/model/balopt.opt')
-                
-            os.chdir('operun/model')
-            os.system(f'gams Balmorel --scenario_name "{scenario}_{runtype}_E{epoch}"')
+                os.system(f'cp -f {scenario_folder}/S.inc {scenario_folder}/data')
+                os.system(f'cp -f {scenario_folder}/T_{runtype}.inc {scenario_folder}/data/T.inc')
+                os.system(f'mv {scenario_folder}/model/balopt_{runtype}.opt {scenario_folder}/model/balopt.opt')
+
+            # Copy from the simex folder
+            if epoch > 0 and runtype == 'dispatch':
+                os.system(f'cp -rf simex_{scenario_name}/* simex')
+            
+            os.chdir(f'{scenario_folder}/model')
+            os.system(f'gams Balmorel --scenario_name "{scenario_name}_{runtype}_E{epoch}"')
 
             os.chdir('../../')
 
-            # Copy the simex folder
-            # cp simex -r simex_$name
+            # Copy the simex folder          
+            os.system(f'cp -rf simex/* simex_{scenario_name}')
 
             if runtype != "capacity":
                 # Rename balopt back
-                os.system(f'mv "operun/model/balopt.opt" "operun/model/balopt_{runtype}.opt"')
+                os.system(f'mv "{scenario_folder}/model/balopt.opt" "{scenario_folder}/model/balopt_{runtype}.opt"')
         
-        os.system(f'pixi run python analysis/analyse.py adequacy "{scenario}_dispatch" {epoch}')
+        os.system(f'pixi run python -u analysis/analyse.py adequacy "{scenario_name}_dispatch" {epoch}')
         os.chdir('../')
-        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size, logger=logger)
-        os.chdir('Balmorel')
+        model = train(model, f"{scenario_name}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size, logger=logger, scenario_folder=scenario_folder)
         
         # save the model
+<<<<<<< HEAD
         model.save_model(str(ckpt_path))
+=======
+        model.save_model(f"Logs/{scenario_name}_model_checkpoint.pth")
+>>>>>>> upstream/master
         logger.info(f"Epoch {epoch} completed and model saved.")
         
         epoch += 1
 
+        os.chdir('Balmorel')
 
 #%% ------------------------------- ###
 ###            2. Utils             ###
