@@ -20,6 +20,10 @@ import shlex
 from datetime import datetime
 from pathlib import Path
 
+# ignore warnings
+import warnings
+warnings.filterwarnings("ignore")
+
 def _setup_logger(scenario: str):
     """Create Logs/<scenario>_<timestamp>.log and return (logger, logfile_path)."""
     logs_dir = Path(__file__).resolve().parents[2] / "Logs"   # -> /.../src/Logs
@@ -146,6 +150,10 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
         os.chdir('../')
         model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size, logger=logger)
         os.chdir('Balmorel')
+        
+        # save the model
+        model.save_model(f"Logs/{scenario}_model_checkpoint.pth")
+        logger.info(f"Epoch {epoch} completed and model saved.")
         
         epoch += 1
 

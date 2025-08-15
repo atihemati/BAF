@@ -35,11 +35,11 @@ export PATH=~/.pixi/bin:$PATH
 
 --- Run ---
 pixi run python Workflow/Functions/online_learning.py DO_D4W4 \
-  --pretrain-epochs 5 \
-  --update-epochs 5 \
+  --pretrain-epochs 200 \
+  --update-epochs 200 \
   --days 1 \
   --n-scenarios 2 \
   --latent-dim 64 \
-  --seed 0 \
+  --seed 42 \
   --batch-size 256 \
   --learning-rate 0.0005 \
