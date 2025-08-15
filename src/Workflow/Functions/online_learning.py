@@ -119,6 +119,10 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
     # n_scenarios = 2
     model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed, logger=logger)
     
+    logs_dir = logfile.parent
+    ckpt_path = logs_dir / f"{scenario}_model_checkpoint.pth"
+
+    
     
     os.chdir('Balmorel')
 
@@ -152,7 +156,7 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
         os.chdir('Balmorel')
         
         # save the model
-        model.save_model(f"Logs/{scenario}_model_checkpoint.pth")
+        model.save_model(str(ckpt_path))
         logger.info(f"Epoch {epoch} completed and model saved.")
         
         epoch += 1
