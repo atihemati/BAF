@@ -19,7 +19,7 @@
 * Hence, if calculation time is an issue, it is recommended as default to not use them,
 * and then, if the solver declares the problem infeasible, use them and resolve.
 * Information of ... in the .log file?
-$setglobal vqdebug 
+$setglobal vqdebug
 *!option yes
 
 *Reduce number of infeasibility variables. By default, infeasibility variables are added to many equations, which is not always required.
@@ -27,6 +27,7 @@ $setglobal reduced_vqdebug
 *!option yes
 *-----------------------------------------------------------------
 *---- END: VQDEBUG ------------------------------------------------
+
 
 *===============================================================================
 *===============================================================================
@@ -77,7 +78,7 @@ $setglobal bb4 yes
 *-------- Seasonal rolling horizon  ---------
 * Optimize seasons with a rolling horizon approach instead of all together.
 *NOTE: This option is supposed to be combined with the option "import_results", which must contain information for all S and at least the first element in T
-$setglobal RollingSeasons 
+$setglobal RollingSeasons
 *!option yes
 
 SCALAR ROLLINGSEASONSNUMBER 'Number of seasons to be optimized at a time in each rolling season optimization';
@@ -123,7 +124,7 @@ XINVESTSTART= 2035;
 *overall control variable HEATTRANS must be 'yes' if any of the other heat trans controls are.
 
 * Permit heat transmission between areas.
-$setglobal HEATTRANS yes
+$setglobal HEATTRANS YES
 *!option yes
 
 * Permit heat transmission investments between areas.
@@ -232,25 +233,10 @@ $setglobal EV_INTERSEASONAL
 *!option yes
 *------------------------------END: EV ADDON-------------------------------------------------
 
-*------------------------------FLEXDEM ADDON-------------------------------------------------
-* Overall control variable of adding the flexible demand addon
-$setglobal FLEXDEM 
-*!option yes
-
-* Seasonal demand
-$setglobal seasonal_demand yes
-*!option yes
-
-* Inflexible demand
-$setglobal inflex_demand  
-*!option yes
-
-*------------------------------END:FLEXDEM ADDON-------------------------------------------------
-
 *------------------------------TRANSPORT ADDON-------------------------------------------------
 * overall control variable TRANSPORT must be 'yes' if any of the other TRANSPORT controls are:
 * Include transport data in the optimization (it is supposed to complement the EV addon, so check consistency of data before using it).
-$setglobal TRANSPORT yes
+$setglobal TRANSPORT YES 
 *!option yes
 
 * Defines the commodity used to model synthetic fuel generation.
@@ -263,6 +249,23 @@ $setglobal TRANSPORT_DEMAND_AGGREGATED
 
 
 *------------------------------END:TRANSPORT ADDON-------------------------------------------------
+
+
+*------------------------------FLEXDEM ADDON-------------------------------------------------
+* Overall control variable of adding the flexible demand addon
+$setglobal FLEXDEM 
+*!option yes
+
+* Seasonal demand - if not set to yes, demand will just have to be met within a year
+$setglobal seasonal_demand yes
+*!option yes
+
+* Inflexible demand
+$setglobal inflex_demand  
+*!option yes
+
+*------------------------------END:FLEXDEM ADDON-------------------------------------------------
+
 
 *-----------------------------------------------------------
 *---------------HYDRO RESERVOIRS OPTIONS--------------------
@@ -338,28 +341,12 @@ $setglobal COMBTECH
 *-----------------HYDROGEN ADDON---------------------------------------
 * overall control variable HYDROGEN must be 'yes' if any of the other HYDROGEN controls are:
 * Set demands for hydrogen consumption and enable hydrogen technologies (some options require COMBTECH to be activated too).
-$Setglobal HYDROGEN yes
+$Setglobal HYDROGEN YES
 *!option yes
-
-* Adds generic synfuel production
-$setglobal generic_synfuel   yes
-*!option yes
-
-* Make generic synfuel production inflexible (will use GDUCGMIN from GDATA to create minimum production constraint)
-$setglobal generic_synfuel_inflex  
-*!option yes
-
-* Set whether synfuel places an area or regional demand
-$setglobal generic_synfuel_h2dem region
-*!option area or region
 
 * Allows investments in hydrogen transport
 $Setglobal H2TransInvest 
 *!option yes
-
-* Set whether hydrogen transmission investments should be determined at an area or region level
-$setglobal h2_transmission_definition region
-*!option area or region
 
 SCALAR XH2INVESTSTART 'Year from which endogenous decisions in H2 transmission capacities are allowed' ;
 XH2INVESTSTART= 2030;
@@ -372,22 +359,10 @@ $Setglobal IMPORT_H2 YES
 *!option yes
 
 * Allows flexible demand of H2 in regions (set ratio of flexible demand in HYDROGEN_FLEXDH2 with the scalar THETA_FLEX_DH2)
-$setglobal flexible_h2_space  
+$setglobal flexible_h2_space 
 *!option yes
 
 *-----------------END: HYDROGEN ADDON---------------------------------------
-
-
-*-----------------FUELTRANSPORT ADDON---------------------------------------
-
-* Enable annual transport of fuels, only possible if a FUELTRANSPORT_COST is defined 
-$setglobal fueltransport yes
-
-$setglobal fueltransport_definition region
-*!option region or area
-
-*-----------------END: FUELTRANSPORT ADDON---------------------------------------
-
 
 * Use stepwise linear fuel prices
 $Setglobal STEPWISEPRICE
@@ -666,11 +641,8 @@ $label endofMSNTrelpaths
 * e.g. one model output serving as input to another model.
 
 * Overall control to export results so they can be used in future runs :
-$Setglobal export_results yes
+$Setglobal export_results
 *!option yes
-
-* If no hydro is modelled, you will need to set this global to yes
-$setglobal no_hydro yes
 
 *--------------------------------------------
 *--------------IMPORT OF RESULTS----------------
@@ -763,7 +735,7 @@ $setglobal ADDTRANSDEV yes
 *!option yes
 
 *Import heat transmission development from previous runs
-$setglobal ADDHEATTRANSDEV 
+$setglobal ADDHEATTRANSDEV yes
 *!option yes
 
 *Import H2 transmission development from previous runs
@@ -1004,7 +976,7 @@ putclose fileMERGEWITHBASEbat;
 
 * The model type has implications for the solver type.
 * Classical model types are LP (Linear Programming), QP (Quadratic Programming), MIP (Mixed Integer Programming).
-$setglobal SOLVETYPE RMIP
+$setglobal SOLVETYPE LP
 *!option LP      "Linear Programming"
 *!option RMIP    "Relaxed Mixed Integer Programming"
 *!option MIP     "Mixed Integer Programming"
