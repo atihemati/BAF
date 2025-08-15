@@ -31,15 +31,15 @@
 export PATH=/appl/gams/47.6.0:$PATH
 export PATH=~/.pixi/bin:$PATH
 
-pixi run python Workflow/Functions/online_learning.py DO_D4W4
+#pixi run python Workflow/Functions/online_learning.py DO_D4W4
 
-# --- Run ---
-# pixi run python Workflow/Functions/online_learning.py DO_D4W4 \
-#   --pretrain-epochs 5 \
-#   --update-epochs 1 \
-#   --days 1 \
-#   --n-scenarios 2 \
-#   --latent-dim 64 \
-#   --seed 0 \
-#   --batch-size 256 \
-#   --learning-rate 0.0005 \
+--- Run ---
+pixi run python Workflow/Functions/online_learning.py DO_D4W4 \
+  --pretrain-epochs 5 \
+  --update-epochs 5 \
+  --days 1 \
+  --n-scenarios 2 \
+  --latent-dim 64 \
+  --seed 0 \
+  --batch-size 256 \
+  --learning-rate 0.0005 \

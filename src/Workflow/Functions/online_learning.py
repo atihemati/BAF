@@ -15,6 +15,46 @@ import click
 import os
 from neural_network import pretrain, train
 
+import logging
+import shlex
+from datetime import datetime
+from pathlib import Path
+
+def _setup_logger(scenario: str):
+    """Create Logs/<scenario>_<timestamp>.log and return (logger, logfile_path)."""
+    logs_dir = Path(__file__).resolve().parents[2] / "Logs"   # -> /.../src/Logs
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    logfile = logs_dir / f"{scenario}_{ts}.log"
+
+    logger = logging.getLogger(f"online_learning.{scenario}.{ts}")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+    fh = logging.FileHandler(logfile, encoding="utf-8")
+    fh.setFormatter(fmt)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+    return logger, logfile
+
+
+def _run(cmd: str, logger: logging.Logger, logfile: Path) -> int:
+    """Run a shell command, append stdout/stderr to logfile, and log the command."""
+    logger.info(f"$ {cmd}")
+    qlog = shlex.quote(str(logfile))
+    rc = os.system(f"{cmd} >> {qlog} 2>&1")
+    if rc != 0:
+        logger.warning(f"Command returned non-zero exit code {rc}: {cmd}")
+    return rc
+
+
+
 @click.command()
 @click.argument('scenario', type=str, required=True)
 @click.option('--dark-style', is_flag=True, required=False, help='Dark plot style')
@@ -43,6 +83,8 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
         latent_dim: int, seed: int, batch_size: int, learning_rate: float):
     """
     Description of the CLI
+    Online learning driver with logging to src/Logs/<scenario>_<timestamp>.log
+    
     """
     
     # Set global style of plot
@@ -56,11 +98,22 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
     ctx.ensure_object(dict)
     ctx.obj['fc'] = fc
     ctx.obj['plot_ext'] = plot_ext
+    
+    # logging
+    logger, logfile = _setup_logger(scenario)
+    logger.info("=== Online learning run started ===")
+    logger.info(f"scenario={scenario} pretrain_epochs={pretrain_epochs} update_epochs={update_epochs} "
+                f"days={days} n_scenarios={n_scenarios} latent_dim={latent_dim} seed={seed} "
+                f"batch_size={batch_size} learning_rate={learning_rate}")
+    logger.info(f"Logfile: {logfile}")
 
+    # pretraining + initial scenario generation
+    logger.info("Starting pretraining...")
+    
     epoch = 0    
     # days = 1
     # n_scenarios = 2
-    model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed)
+    model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed, logger=logger)
     
     
     os.chdir('Balmorel')
@@ -91,7 +144,7 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: in
         
         os.system(f'pixi run python analysis/analyse.py adequacy "{scenario}_dispatch" {epoch}')
         os.chdir('../')
-        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size)
+        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size, logger=logger)
         os.chdir('Balmorel')
         
         epoch += 1
