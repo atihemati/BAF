@@ -484,12 +484,12 @@ def convert_to_incfiles(new_scenarios_df: pd.DataFrame,
         suffix='\n/;',
         path=balmorel_model_path + f'/{scenario_folder}/capexp_data'
     ).save()
-    
-#%% ------------------------------- ###
+
         
-def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4, latent_dim: int = 64, batch_size: int = 256, learning_rate: float = 5e-4, seed: int = 42, logger=None):
+def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4, latent_dim: int = 64, batch_size: int = 256, learning_rate: float = 5e-4, seed: int = 42, logger=None, scenario_folder: str = 'operun'):
     """
     Pretrain the scenario generator.
+    
     Parameters
     ----------
     epochs : int
@@ -506,6 +506,10 @@ def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4, latent_dim: int =
         Optimizer learning rate for the ScenarioGenerator.
     seed : int, default 42
         Random seed for reproducibility.
+    logger : bool, default None
+        Whether to log or print (None = False)
+    scenario_folder : str, default operun
+        Which scenario folder to run
     """
     
     log = (logger.info if logger else print)
@@ -525,13 +529,13 @@ def pretrain(epochs: int, days: int = 1, n_scenarios: int = 4, latent_dim: int =
     
     log("Converting scenarios to INC files")
     
-    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'), overwrite_data_load=True)
+    convert_to_incfiles(new_scenarios_df, 'base', scenario_folder, gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'), overwrite_data_load=True)
 
     # model.save_model(f'Pre-Processing/Output/{scenario}_model.pth')
 
     return model
 
-def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=4, batch_size: int = 256, logger=None):
+def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=4, batch_size: int = 256, logger=None, scenario_folder: str = 'operun'):
     
     # Get the objective value
     df1 = pd.read_csv(os.path.join('Balmorel/analysis/output', scenario + '_adeq.csv')).query(f'epoch == {epoch}')
@@ -551,6 +555,6 @@ def train(model: ScenarioGenerator, scenario: str, epoch: int, n_scenarios: int=
     new_scenarios, new_scenarios_df = model.generate_scenario(batch_size=batch_size, n_scenarios=n_scenarios)
     
     log("running convert_to_incfiles")
-    convert_to_incfiles(new_scenarios_df, 'base', 'operun', gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'))
+    convert_to_incfiles(new_scenarios_df, 'base', scenario_folder, gams_system_directory=os.getenv('GAMS_DIR','/appl/gams/47.6.0'))
     
     return model

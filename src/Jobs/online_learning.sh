@@ -31,10 +31,10 @@
 export PATH=/appl/gams/47.6.0:$PATH
 export PATH=~/.pixi/bin:$PATH
 
-#pixi run python Workflow/Functions/online_learning.py DO_D4W4
-
---- Run ---
-pixi run python Workflow/Functions/online_learning.py DO_D4W4 \
+### --- Run ---
+pixi run python Workflow/Functions/online_learning.py \
+  --scenario-name DO_D1W1 \
+  --scenario-folder operun \
   --pretrain-epochs 200 \
   --update-epochs 200 \
   --days 1 \
