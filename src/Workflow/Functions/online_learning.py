@@ -172,11 +172,7 @@ def CLI(ctx, scenario_name: str, scenario_folder: str, dark_style: bool, plot_ex
         model = train(model, f"{scenario_name}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size, logger=logger, scenario_folder=scenario_folder)
         
         # save the model
-<<<<<<< HEAD
         model.save_model(str(ckpt_path))
-=======
-        model.save_model(f"Logs/{scenario_name}_model_checkpoint.pth")
->>>>>>> upstream/master
         logger.info(f"Epoch {epoch} completed and model saved.")
         
         epoch += 1
