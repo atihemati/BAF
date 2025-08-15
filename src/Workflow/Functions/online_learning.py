@@ -19,8 +19,28 @@ from neural_network import pretrain, train
 @click.argument('scenario', type=str, required=True)
 @click.option('--dark-style', is_flag=True, required=False, help='Dark plot style')
 @click.option('--plot-ext', type=str, default='.pdf', required=False, help='The extension of the plot, defaults to ".pdf"')
+
+# ---- new tuning options ----
+@click.option('--pretrain-epochs', type=int, default=5, show_default=True,
+              help='Number of epochs for initial pretraining')
+@click.option('--update-epochs', type=int, default=1, show_default=True,
+              help='Epochs used during each training update step')
+@click.option('--days', type=int, default=1, show_default=True,
+              help='Length of scenario blocks in days')
+@click.option('--n-scenarios', type=int, default=2, show_default=True,
+              help='How many scenarios to generate each round')
+@click.option('--latent-dim', type=int, default=64, show_default=True,
+              help='Latent dimension for the scenario generator')
+@click.option('--seed', type=int, default=42, show_default=True,
+              help='Random seed')
+@click.option('--batch-size', type=int, default=256, show_default=True,
+              help='Batch size used for pretraining / generation')
+@click.option('--learning-rate', type=float, default=5e-4, show_default=True,
+              help='Learning rate for the scenario generator (pretrain/update)')
+
 @click.pass_context
-def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str):
+def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str, pretrain_epochs: int, update_epochs: int, days: int, n_scenarios: int,
+        latent_dim: int, seed: int, batch_size: int, learning_rate: float):
     """
     Description of the CLI
     """
@@ -38,12 +58,14 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str):
     ctx.obj['plot_ext'] = plot_ext
 
     epoch = 0    
-    days = 7
-    n_scenarios = 8
-    model = pretrain(5, days=days, n_scenarios=n_scenarios)
+    # days = 1
+    # n_scenarios = 2
+    model = pretrain(pretrain_epochs, days=days, n_scenarios=n_scenarios, latent_dim=latent_dim, batch_size=batch_size, learning_rate=learning_rate, seed=seed,)
+    
+    
     os.chdir('Balmorel')
 
-    while epoch < 100:
+    while epoch < update_epochs:
         for runtype in ['capacity', 'dispatch']:
             
             os.system('rm operun/data/*.inc')
@@ -69,7 +91,7 @@ def CLI(ctx, scenario: str, dark_style: bool, plot_ext: str):
         
         os.system(f'pixi run python analysis/analyse.py adequacy "{scenario}_dispatch" {epoch}')
         os.chdir('../')
-        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios)
+        model = train(model, f"{scenario}_dispatch", epoch, n_scenarios=n_scenarios, batch_size=batch_size)
         os.chdir('Balmorel')
         
         epoch += 1
